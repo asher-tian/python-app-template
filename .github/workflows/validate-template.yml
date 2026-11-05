@@ -45,3 +45,21 @@ jobs:
       - name: Test
         working-directory: generated
         run: uv run pytest
+
+      - name: CLI configuration smoke test
+        working-directory: generated
+        run: uv run template_validation analysis --config config.json --dry-run
+
+      - name: Run multi-Workflow demo
+        working-directory: generated
+        run: uv run template_validation analysis --config config.json
+
+      - name: Verify reports and run artifacts
+        working-directory: generated
+        run: |
+          test -f workspace/reports/alpha/index.html
+          test -f workspace/reports/beta/index.html
+          test -f workspace/reports/gamma/index.html
+          test "$(find workspace/logs/analysis -name manifest.json | wc -l)" -eq 1
+          test "$(find workspace/logs/analysis -path '*/workflows/*.jsonl' | wc -l)" -eq 3
+          test "$(find workspace/logs/analysis -name run.jsonl | wc -l)" -eq 1

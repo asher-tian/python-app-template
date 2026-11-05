@@ -1,84 +1,81 @@
-"""Composition root: build adapters and wire the application."""
+"""Composition root for shared runtime resources and the demo workflow."""
 
-from __future__ import annotations
+from pathlib import Path
 
-from dataclasses import dataclass
-
-from {{ package_name }}.core.application.app import Application
-from {{ package_name }}.core.application.tasks.analyze import AnalyzeTaskFactory
-from {{ package_name }}.core.application.use_cases.analyze import AnalyzeUseCase
-from {{ package_name }}.infrastructure.compute.process_pool import ProcessPoolCompute
-from {{ package_name }}.infrastructure.database.sqlite import (
-    SQLiteTaskResultRepository,
-)
-from {{ package_name }}.infrastructure.logging.setup import LoggingManager
+from {{ package_name }}.core.ports.logging import Logger, LoggingContextFactory
+from {{ package_name }}.core.tasks.analysis import AnalysisTask
+from {{ package_name }}.core.tasks.optional import OptionalAnalysisTask
+from {{ package_name }}.core.tasks.preparation import PrepareDataTask
+from {{ package_name }}.core.tasks.reporting import ReportTask
+from {{ package_name }}.core.workflows.analysis.workflow import AnalysisWorkflow
+from {{ package_name }}.infrastructure.execution.process_pool import ProcessPoolCompute
+from {{ package_name }}.infrastructure.manifest import RunManifest
 from {{ package_name }}.infrastructure.storage.local import LocalArtifactStore
-from {{ package_name }}.runtime.config import RuntimeConfig
-from {{ package_name }}.runtime.scheduler import ThreadTaskScheduler
-
-
-@dataclass
-class ApplicationRuntime:
-    application: Application
-    logging: LoggingManager
-    compute: ProcessPoolCompute
-    _closed: bool = False
-
-    def close(self) -> None:
-        if self._closed:
-            return
-        try:
-            self.compute.close()
-        finally:
-            self.logging.close()
-            self._closed = True
-
-    def __enter__(self) -> ApplicationRuntime:
-        return self
-
-    def __exit__(self, exc_type, exc_value, traceback) -> None:
-        self.close()
+from {{ package_name }}.runtime.application_runtime import ApplicationRuntime
+from {{ package_name }}.runtime.workflow_runner import WorkflowRunner
 
 
 def create_runtime(
-    config: RuntimeConfig,
+    *,
+    workpath: Path,
+    command: str,
     run_id: str,
+    run_dir: Path,
+    config_source: str,
+    effective_config: dict[str, object],
+    logging: LoggingContextFactory,
 ) -> ApplicationRuntime:
-    config.workpath.mkdir(parents=True, exist_ok=True)
-    logging_manager = LoggingManager(
-        config.log_dir,
-        command="analyze",
-        run_id=run_id,
-    )
     compute = None
+    workflow_runner = None
     try:
-        compute = ProcessPoolCompute(
-            max_workers=config.compute_workers,
-            log_queue=logging_manager.queue,
+        compute = ProcessPoolCompute()
+        storage = LocalArtifactStore(workpath)
+        workflow_runner = WorkflowRunner(
+            run_logger=logging.run_logger(),
+            workflow_logger_factory=logging.workflow_logger,
         )
-        repository = (
-            SQLiteTaskResultRepository(config.sqlite_path) if config.sqlite_enabled else None
+        manifest = RunManifest(
+            path=run_dir / "manifest.json",
+            run_id=run_id,
+            command=command,
+            application_name="{{ project_name }}",
+            application_version="0.1.0",
+            config_source=config_source,
+            effective_config=effective_config,
         )
-        artifacts = LocalArtifactStore(config.workpath)
-        scheduler = ThreadTaskScheduler(config.max_concurrent_tasks)
-        task_factory = AnalyzeTaskFactory(
-            compute=compute,
-            artifacts=artifacts,
-            repository=repository,
-            logging_provider=logging_manager,
-            chunk_size=config.chunk_size,
-            max_inflight=config.max_inflight_per_task,
-        )
-        use_case = AnalyzeUseCase(task_factory, scheduler)
         return ApplicationRuntime(
-            application=Application(use_case),
-            logging=logging_manager,
+            workflow_runner=workflow_runner,
             compute=compute,
+            storage=storage,
+            logging=logging,
+            manifest=manifest,
         )
     except Exception:
-        try:
-            if compute is not None:
-                compute.close()
-        finally:
-            logging_manager.close()
+        if workflow_runner is not None:
+            workflow_runner.close()
+        if compute is not None:
+            compute.close()
+        logging.close()
         raise
+
+
+def create_analysis_workflow(runtime: ApplicationRuntime, logger: Logger) -> AnalysisWorkflow:
+    """Create fresh Task instances for one Workflow execution."""
+    return AnalysisWorkflow(
+        prepare_task=PrepareDataTask(logger.bind(task_name="prepare_data")),
+        analysis_task=AnalysisTask(
+            runtime.compute,
+            logger.bind(task_name="analysis"),
+        ),
+        optional_task=OptionalAnalysisTask(
+            logger.bind(task_name="optional_analysis"),
+        ),
+        report_task=ReportTask(
+            runtime.storage,
+            logger.bind(task_name="report"),
+        ),
+        logger=logger,
+    )
+
+
+__all__ = ["create_analysis_workflow", "create_runtime"]

@@ -1,0 +1,125 @@
+"""Thread-based runner for independent Workflow instances."""
+
+from collections.abc import Callable, Sequence
+from concurrent.futures import Future, ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
+from typing import Protocol, TypeVar
+
+from {{ package_name }}.core.ports.logging import Logger
+
+InputT = TypeVar("InputT")
+ResultT = TypeVar("ResultT")
+
+
+class Workflow(Protocol[InputT, ResultT]):
+    def execute(self, request: InputT) -> ResultT: ...
+
+
+@dataclass(frozen=True)
+class WorkflowOutcome[ResultT]:
+    execution_id: str
+    workflow_name: str
+    success: bool
+    result: ResultT | None = None
+    error: str | None = None
+    metadata: dict[str, object] | None = None
+
+
+class WorkflowRunner:
+    """Runs one fresh Workflow instance per input using a shared thread pool."""
+
+    def __init__(
+        self,
+        *,
+        run_logger: Logger,
+        workflow_logger_factory: Callable[[str, str, dict[str, object] | None], Logger],
+    ) -> None:
+        self._executor = ThreadPoolExecutor(thread_name_prefix="workflow")
+        self._run_logger = run_logger
+        self._workflow_logger_factory = workflow_logger_factory
+        self._closed = False
+
+    def run(
+        self,
+        *,
+        workflow_name: str,
+        workflow_factory: Callable[[Logger], Workflow[InputT, ResultT]],
+        inputs: Sequence[InputT],
+        metadata_factory: Callable[[InputT], dict[str, object]] | None = None,
+    ) -> list[WorkflowOutcome[ResultT]]:
+        if self._closed:
+            raise RuntimeError("WorkflowRunner is closed")
+
+        outcomes: list[WorkflowOutcome[ResultT] | None] = [None] * len(inputs)
+        futures: dict[
+            Future[ResultT],
+            tuple[int, str, Logger, Logger, dict[str, object]],
+        ] = {}
+
+        for index, workflow_input in enumerate(inputs):
+            execution_id = f"{index + 1:04d}"
+            metadata = metadata_factory(workflow_input) if metadata_factory else {}
+            workflow_logger = self._workflow_logger_factory(
+                workflow_name,
+                execution_id,
+                metadata,
+            )
+            run_logger = self._run_logger.bind(
+                workflow_name=workflow_name,
+                execution_id=execution_id,
+            )
+            run_logger.info("Workflow submitted")
+            future = self._executor.submit(
+                self._execute_one,
+                workflow_factory,
+                workflow_input,
+                workflow_logger,
+            )
+            futures[future] = (
+                index,
+                execution_id,
+                workflow_logger,
+                run_logger,
+                metadata,
+            )
+
+        for future in as_completed(futures):
+            index, execution_id, workflow_logger, run_logger, metadata = futures[future]
+            try:
+                result = future.result()
+            except Exception as exc:
+                workflow_logger.exception("Workflow failed")
+                run_logger.error("Workflow failed: %s", exc)
+                outcomes[index] = WorkflowOutcome(
+                    execution_id=execution_id,
+                    workflow_name=workflow_name,
+                    success=False,
+                    error=f"{type(exc).__name__}: {exc}",
+                    metadata=metadata,
+                )
+            else:
+                run_logger.info("Workflow completed")
+                outcomes[index] = WorkflowOutcome(
+                    execution_id=execution_id,
+                    workflow_name=workflow_name,
+                    success=True,
+                    result=result,
+                    metadata=metadata,
+                )
+
+        return [outcome for outcome in outcomes if outcome is not None]
+
+    @staticmethod
+    def _execute_one(
+        workflow_factory: Callable[[Logger], Workflow[InputT, ResultT]],
+        workflow_input: InputT,
+        logger: Logger,
+    ) -> ResultT:
+        workflow = workflow_factory(logger)
+        return workflow.execute(workflow_input)
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._executor.shutdown(wait=True, cancel_futures=False)
+        self._closed = True

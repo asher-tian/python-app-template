@@ -1,0 +1,68 @@
+"""Route Run and Workflow records to their JSONL files and Console."""
+
+import logging
+import re
+from pathlib import Path
+
+from {{ package_name }}.infrastructure.logging.formatters import (
+    ConsoleFormatter,
+    JsonLineFormatter,
+)
+
+
+def _safe_filename(value: str) -> str:
+    return re.sub(r"[^A-Za-z0-9_.-]+", "-", value).strip(".-_") or "item"
+
+
+class LogRouterHandler(logging.Handler):
+    def __init__(self, run_dir: Path) -> None:
+        super().__init__(logging.DEBUG)
+        self._run_dir = run_dir
+        self._workflow_dir = run_dir / "workflows"
+        self._workflow_dir.mkdir(parents=True, exist_ok=True)
+
+        self._run_handler = logging.FileHandler(
+            run_dir / "run.jsonl",
+            encoding="utf-8",
+        )
+        self._run_handler.setLevel(logging.DEBUG)
+        self._run_handler.setFormatter(JsonLineFormatter())
+
+        self._console_handler = logging.StreamHandler()
+        self._console_handler.setLevel(logging.INFO)
+        self._console_handler.setFormatter(ConsoleFormatter())
+
+        self._workflow_handlers: dict[str, logging.FileHandler] = {}
+
+    def _workflow_handler(self, record: logging.LogRecord) -> logging.FileHandler:
+        execution_id = str(getattr(record, "execution_id", "unknown"))
+        handler = self._workflow_handlers.get(execution_id)
+        if handler is None:
+            workflow_name = _safe_filename(str(getattr(record, "workflow_name", "workflow")))
+            safe_execution_id = _safe_filename(execution_id)
+            path = self._workflow_dir / f"{workflow_name}_{safe_execution_id}.jsonl"
+            handler = logging.FileHandler(path, encoding="utf-8")
+            handler.setLevel(logging.DEBUG)
+            handler.setFormatter(JsonLineFormatter())
+            self._workflow_handlers[execution_id] = handler
+        return handler
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            if getattr(record, "scope", "run") == "workflow":
+                self._workflow_handler(record).handle(record)
+            else:
+                self._run_handler.handle(record)
+
+            if record.levelno >= logging.INFO:
+                self._console_handler.handle(record)
+        except Exception:
+            self.handleError(record)
+
+    def close(self) -> None:
+        for handler in self._workflow_handlers.values():
+            handler.close()
+        self._workflow_handlers.clear()
+        self._run_handler.close()
+        self._console_handler.close()
+        super().close()

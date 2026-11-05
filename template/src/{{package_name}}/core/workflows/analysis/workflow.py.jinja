@@ -1,0 +1,58 @@
+"""Complete, independent Analysis workflow."""
+
+from {{ package_name }}.core.ports.logging import Logger
+from {{ package_name }}.core.tasks.analysis import AnalysisTask
+from {{ package_name }}.core.tasks.optional import OptionalAnalysisTask
+from {{ package_name }}.core.tasks.preparation import PrepareDataTask
+from {{ package_name }}.core.tasks.reporting import ReportTask
+from {{ package_name }}.core.workflows.analysis.models import (
+    AnalysisWorkflowInput,
+    AnalysisWorkflowResult,
+)
+
+
+class AnalysisWorkflow:
+    def __init__(
+        self,
+        *,
+        prepare_task: PrepareDataTask,
+        analysis_task: AnalysisTask,
+        optional_task: OptionalAnalysisTask,
+        report_task: ReportTask,
+        logger: Logger,
+    ) -> None:
+        self._prepare_task = prepare_task
+        self._analysis_task = analysis_task
+        self._optional_task = optional_task
+        self._report_task = report_task
+        self._logger = logger
+
+    def execute(self, request: AnalysisWorkflowInput) -> AnalysisWorkflowResult:
+        self._logger.info("Workflow started; label=%s", request.label)
+
+        values = self._prepare_task.execute(request.item_count)
+        total = self._analysis_task.execute(values)
+
+        optional_value = None
+        if request.options.enable_optional_task:
+            optional_value = self._optional_task.execute(values)
+        else:
+            self._logger.info("Optional task skipped by workflow configuration")
+
+        report_key = self._report_task.execute(
+            label=request.label,
+            item_count=len(values),
+            total=total,
+            optional_value=optional_value,
+            output_key=request.output_key,
+        )
+
+        result = AnalysisWorkflowResult(
+            label=request.label,
+            item_count=len(values),
+            total=total,
+            optional_value=optional_value,
+            report_key=report_key,
+        )
+        self._logger.info("Workflow completed; report=%s", report_key)
+        return result

@@ -1,15 +1,9 @@
-"""Persistence ports."""
+"""Optional persistence capability for workflow results."""
 
 from typing import Protocol
 
-from {{ package_name }}.core.models import JsonObject
 
-
-class TaskResultRepository(Protocol):
-    def save(
-        self,
-        run_id: str,
-        task_id: str,
-        label: str,
-        summary: JsonObject,
-    ) -> None: ...
+class ResultRepository(Protocol):
+    def save(self, run_id: str, execution_id: str, result_json: str) -> None:
+        """Persist one workflow result."""
+        ...

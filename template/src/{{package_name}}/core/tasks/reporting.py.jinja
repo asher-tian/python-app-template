@@ -1,0 +1,38 @@
+"""Generate the standalone HTML report for one workflow execution."""
+
+from html import escape
+
+from {{ package_name }}.core.ports.logging import Logger
+from {{ package_name }}.core.ports.storage import ArtifactStore
+
+
+class ReportTask:
+    def __init__(self, storage: ArtifactStore, logger: Logger) -> None:
+        self._storage = storage
+        self._logger = logger
+
+    def execute(
+        self,
+        *,
+        label: str,
+        item_count: int,
+        total: int,
+        optional_value: int | None,
+        output_key: str,
+    ) -> str:
+        optional_section = (
+            f"<p>Optional result: {optional_value}</p>"
+            if optional_value is not None
+            else "<p>Optional analysis was not enabled.</p>"
+        )
+        document = (
+            "<!doctype html><html lang='en'><head>"
+            "<meta charset='utf-8'><meta name='viewport' content='width=device-width'>"
+            f"<title>{escape(label)} analysis</title></head><body>"
+            f"<h1>{escape(label)} analysis</h1>"
+            f"<p>Items: {item_count}</p><p>Sum of squares: {total}</p>"
+            f"{optional_section}</body></html>"
+        )
+        self._storage.write_text(output_key, document)
+        self._logger.info("HTML report written; path=%s", output_key)
+        return output_key
