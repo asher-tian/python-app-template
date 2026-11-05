@@ -2,8 +2,8 @@
 
 from dataclasses import dataclass
 
+from {{ package_name }}.core.ports.logging import LoggingContextFactory
 from {{ package_name }}.infrastructure.execution.process_pool import ProcessPoolCompute
-from {{ package_name }}.infrastructure.logging.manager import LoggingManager
 from {{ package_name }}.infrastructure.manifest import RunManifest
 from {{ package_name }}.infrastructure.storage.local import LocalArtifactStore
 from {{ package_name }}.runtime.workflow_runner import WorkflowRunner
@@ -14,7 +14,7 @@ class ApplicationRuntime:
     workflow_runner: WorkflowRunner
     compute: ProcessPoolCompute
     storage: LocalArtifactStore
-    logging: LoggingManager
+    logging: LoggingContextFactory
     manifest: RunManifest
     _closed: bool = False
 

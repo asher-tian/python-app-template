@@ -1,12 +1,8 @@
-"""Run-scoped logger creation and logging resource lifecycle."""
+"""Context-bound logger creation around an interface-selected handler."""
 
 import logging
-from datetime import datetime
-from pathlib import Path
-from typing import Any
 
 from {{ package_name }}.core.ports.logging import Logger
-from {{ package_name }}.infrastructure.logging.handlers import LogRouterHandler
 
 
 class ContextLogger:
@@ -36,34 +32,27 @@ class ContextLogger:
         self._logger.exception(message, *args, extra=self._context)
 
 
-def create_run_directory(workpath: Path, command: str, run_id: str) -> Path:
-    now = datetime.now().astimezone()
-    date_part = now.strftime("%Y-%m-%d")
-    time_part = now.strftime("%H-%M-%S-%f")[:-3]
-    run_dir = workpath / "logs" / command / date_part / f"{time_part}_{run_id}"
-    run_dir.mkdir(parents=True, exist_ok=False)
-    return run_dir
-
-
 class LoggingManager:
+    """Attach a supplied handler and provide Run / Workflow logger contexts."""
+
     def __init__(
         self,
         *,
         logger_name: str,
-        run_dir: Path,
         command: str,
         run_id: str,
+        handler: logging.Handler,
     ) -> None:
         self._logger = logging.getLogger(logger_name)
         self._previous_handlers = self._logger.handlers[:]
         self._previous_level = self._logger.level
         self._previous_propagate = self._logger.propagate
 
-        for handler in self._previous_handlers:
-            self._logger.removeHandler(handler)
+        for previous_handler in self._previous_handlers:
+            self._logger.removeHandler(previous_handler)
 
-        self._router = LogRouterHandler(run_dir)
-        self._logger.addHandler(self._router)
+        self._handler = handler
+        self._logger.addHandler(self._handler)
         self._logger.setLevel(logging.DEBUG)
         self._logger.propagate = False
 
@@ -85,7 +74,7 @@ class LoggingManager:
         self,
         workflow_name: str,
         execution_id: str,
-        metadata: dict[str, Any] | None = None,
+        metadata: dict[str, object] | None = None,
     ) -> Logger:
         return ContextLogger(
             self._logger,
@@ -102,8 +91,8 @@ class LoggingManager:
     def close(self) -> None:
         if self._closed:
             return
-        self._logger.removeHandler(self._router)
-        self._router.close()
+        self._logger.removeHandler(self._handler)
+        self._handler.close()
         for handler in self._previous_handlers:
             self._logger.addHandler(handler)
         self._logger.setLevel(self._previous_level)

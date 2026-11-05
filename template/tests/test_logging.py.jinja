@@ -1,6 +1,6 @@
 import json
 
-from {{ package_name }}.infrastructure.logging.manager import LoggingManager
+from {{ package_name }}.interfaces.cli.logging_setup import create_cli_logging_manager
 
 
 def test_jsonl_routes_run_and_workflow_logs_and_keeps_traceback_out_of_console(
@@ -8,7 +8,7 @@ def test_jsonl_routes_run_and_workflow_logs_and_keeps_traceback_out_of_console(
     capsys,
 ):
     run_dir = tmp_path / "logs"
-    manager = LoggingManager(
+    manager = create_cli_logging_manager(
         logger_name="test.structured_logging",
         run_dir=run_dir,
         command="analysis",

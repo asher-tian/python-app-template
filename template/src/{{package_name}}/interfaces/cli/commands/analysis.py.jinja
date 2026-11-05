@@ -3,12 +3,15 @@
 import uuid
 from pathlib import Path
 
-from {{ package_name }}.infrastructure.logging.manager import create_run_directory
 from {{ package_name }}.interfaces.cli.configuration.analysis.loader import (
     load_analysis_config,
 )
 from {{ package_name }}.interfaces.cli.configuration.analysis.mapper import (
     map_analysis_config,
+)
+from {{ package_name }}.interfaces.cli.logging_setup import (
+    create_cli_logging_manager,
+    create_run_directory,
 )
 from {{ package_name }}.runtime.bootstrap import create_analysis_workflow, create_runtime
 
@@ -27,6 +30,12 @@ class AnalysisCommand:
         run_dir = create_run_directory(workpath, "analysis", run_id)
         effective_config = config.model_dump(mode="json")
         effective_config["workpath"] = str(workpath)
+        logging_manager = create_cli_logging_manager(
+            logger_name="{{ package_name }}",
+            run_dir=run_dir,
+            command="analysis",
+            run_id=run_id,
+        )
 
         runtime = create_runtime(
             workpath=workpath,
@@ -35,6 +44,7 @@ class AnalysisCommand:
             run_dir=run_dir,
             config_source=str(config_path.resolve()),
             effective_config=effective_config,
+            logging=logging_manager,
         )
         run_logger = runtime.logging.run_logger()
         run_logger.info(

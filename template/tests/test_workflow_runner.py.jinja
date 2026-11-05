@@ -1,6 +1,6 @@
 import time
 
-from {{ package_name }}.infrastructure.logging.manager import LoggingManager
+from {{ package_name }}.interfaces.cli.logging_setup import create_cli_logging_manager
 from {{ package_name }}.runtime.workflow_runner import WorkflowRunner
 
 
@@ -17,7 +17,7 @@ class FakeWorkflow:
 
 
 def test_workflow_runner_isolates_executions_and_continues_after_failure(tmp_path):
-    logging_manager = LoggingManager(
+    logging_manager = create_cli_logging_manager(
         logger_name="test.workflow_runner",
         run_dir=tmp_path / "logs",
         command="analysis",
