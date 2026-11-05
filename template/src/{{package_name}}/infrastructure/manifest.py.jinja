@@ -3,7 +3,8 @@
 import json
 import platform
 import sys
-from datetime import datetime, timezone
+from collections.abc import Mapping, Sequence
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -37,7 +38,7 @@ def redact_secrets(value: Any) -> Any:
 
 
 def utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+    return datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
 class RunManifest:
@@ -82,20 +83,24 @@ class RunManifest:
         }
         self._write()
 
-    def finish(self, outcomes: list[object], status: str) -> None:
+    def finish(
+        self,
+        outcomes: Sequence[Mapping[str, object]],
+        status: str,
+    ) -> None:
         executions = []
         for outcome in outcomes:
-            execution_id = str(getattr(outcome, "execution_id"))
-            workflow_name = str(getattr(outcome, "workflow_name"))
-            success = bool(getattr(outcome, "success"))
+            execution_id = str(outcome["execution_id"])
+            workflow_name = str(outcome["workflow_name"])
+            success = bool(outcome["success"])
             item: dict[str, Any] = {
                 "execution_id": execution_id,
                 "workflow_name": workflow_name,
                 "status": "success" if success else "failed",
                 "log_file": f"workflows/{workflow_name}_{execution_id}.jsonl",
-                "metadata": redact_secrets(getattr(outcome, "metadata", {})),
+                "metadata": redact_secrets(outcome.get("metadata", {})),
             }
-            error = getattr(outcome, "error", None)
+            error = outcome.get("error")
             if error:
                 item["error"] = str(error)
             executions.append(item)

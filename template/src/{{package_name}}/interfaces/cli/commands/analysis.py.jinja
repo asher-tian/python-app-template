@@ -3,14 +3,14 @@
 import uuid
 from pathlib import Path
 
-from {{ package_name }}.infrastructure.logging.manager import create_run_directory
-from {{ package_name }}.runtime.bootstrap import create_analysis_workflow, create_runtime
 from {{ package_name }}.interfaces.cli.configuration.analysis.loader import (
     load_analysis_config,
 )
 from {{ package_name }}.interfaces.cli.configuration.analysis.mapper import (
     map_analysis_config,
 )
+from {{ package_name }}.infrastructure.logging.manager import create_run_directory
+from {{ package_name }}.runtime.bootstrap import create_analysis_workflow, create_runtime
 
 
 class AnalysisCommand:
@@ -58,11 +58,21 @@ class AnalysisCommand:
                 len(outcomes) - failed,
                 failed,
             )
-            runtime.manifest.finish(outcomes, status)
+            manifest_outcomes = [
+                {
+                    "execution_id": outcome.execution_id,
+                    "workflow_name": outcome.workflow_name,
+                    "success": outcome.success,
+                    "metadata": outcome.metadata or {},
+                    "error": outcome.error,
+                }
+                for outcome in outcomes
+            ]
+            runtime.manifest.finish(manifest_outcomes, status)
             return 1 if failed else 0
         except Exception:
             run_logger.exception("Command execution failed")
-            runtime.manifest.finish(outcomes, "failed")
+            runtime.manifest.finish([], "failed")
             return 2
         finally:
             runtime.close()

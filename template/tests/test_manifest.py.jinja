@@ -1,16 +1,6 @@
 import json
-from dataclasses import dataclass
 
 from {{ package_name }}.infrastructure.manifest import RunManifest
-
-
-@dataclass
-class FakeOutcome:
-    execution_id: str
-    workflow_name: str
-    success: bool
-    metadata: dict[str, object]
-    error: str | None = None
 
 
 def test_manifest_records_effective_config_environment_and_execution_status(tmp_path):
@@ -29,19 +19,19 @@ def test_manifest_records_effective_config_environment_and_execution_status(tmp_
     )
     manifest.finish(
         [
-            FakeOutcome(
-                execution_id="0001",
-                workflow_name="analysis",
-                success=True,
-                metadata={"label": "alpha"},
-            ),
-            FakeOutcome(
-                execution_id="0002",
-                workflow_name="analysis",
-                success=False,
-                metadata={"label": "beta"},
-                error="ValueError: failed",
-            ),
+            {
+                "execution_id": "0001",
+                "workflow_name": "analysis",
+                "success": True,
+                "metadata": {"label": "alpha"},
+            },
+            {
+                "execution_id": "0002",
+                "workflow_name": "analysis",
+                "success": False,
+                "metadata": {"label": "beta"},
+                "error": "ValueError: failed",
+            },
         ],
         "failed",
     )

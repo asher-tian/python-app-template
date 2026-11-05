@@ -3,24 +3,24 @@
 from collections.abc import Callable, Sequence
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-from typing import Generic, Protocol, TypeVar
+from typing import Protocol, TypeVar
 
 from {{ package_name }}.core.ports.logging import Logger
 
-I = TypeVar("I")
-R = TypeVar("R")
+InputT = TypeVar("InputT")
+ResultT = TypeVar("ResultT")
 
 
-class Workflow(Protocol[I, R]):
-    def execute(self, request: I) -> R: ...
+class Workflow(Protocol[InputT, ResultT]):
+    def execute(self, request: InputT) -> ResultT: ...
 
 
 @dataclass(frozen=True)
-class WorkflowOutcome(Generic[R]):
+class WorkflowOutcome[ResultT]:
     execution_id: str
     workflow_name: str
     success: bool
-    result: R | None = None
+    result: ResultT | None = None
     error: str | None = None
     metadata: dict[str, object] | None = None
 
@@ -45,16 +45,16 @@ class WorkflowRunner:
         self,
         *,
         workflow_name: str,
-        workflow_factory: Callable[[Logger], Workflow[I, R]],
-        inputs: Sequence[I],
-        metadata_factory: Callable[[I], dict[str, object]] | None = None,
-    ) -> list[WorkflowOutcome[R]]:
+        workflow_factory: Callable[[Logger], Workflow[InputT, ResultT]],
+        inputs: Sequence[InputT],
+        metadata_factory: Callable[[InputT], dict[str, object]] | None = None,
+    ) -> list[WorkflowOutcome[ResultT]]:
         if self._closed:
             raise RuntimeError("WorkflowRunner is closed")
 
-        outcomes: list[WorkflowOutcome[R] | None] = [None] * len(inputs)
+        outcomes: list[WorkflowOutcome[ResultT] | None] = [None] * len(inputs)
         futures: dict[
-            Future[R],
+            Future[ResultT],
             tuple[int, str, Logger, Logger, dict[str, object]],
         ] = {}
 
@@ -113,10 +113,10 @@ class WorkflowRunner:
 
     @staticmethod
     def _execute_one(
-        workflow_factory: Callable[[Logger], Workflow[I, R]],
-        workflow_input: I,
+        workflow_factory: Callable[[Logger], Workflow[InputT, ResultT]],
+        workflow_input: InputT,
         logger: Logger,
-    ) -> R:
+    ) -> ResultT:
         workflow = workflow_factory(logger)
         return workflow.execute(workflow_input)
 
