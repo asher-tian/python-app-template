@@ -3,13 +3,13 @@
 import uuid
 from pathlib import Path
 
+from {{ package_name }}.infrastructure.logging.manager import create_run_directory
 from {{ package_name }}.interfaces.cli.configuration.analysis.loader import (
     load_analysis_config,
 )
 from {{ package_name }}.interfaces.cli.configuration.analysis.mapper import (
     map_analysis_config,
 )
-from {{ package_name }}.infrastructure.logging.manager import create_run_directory
 from {{ package_name }}.runtime.bootstrap import create_analysis_workflow, create_runtime
 
 
