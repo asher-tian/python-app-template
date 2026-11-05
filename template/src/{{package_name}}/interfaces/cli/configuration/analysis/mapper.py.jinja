@@ -32,8 +32,7 @@ def map_analysis_config(
         output_key = f"reports/{_safe_path_component(group.label)}/index.html"
         if output_key in output_keys:
             raise ValueError(
-                "Group labels must produce unique report directories: "
-                f"{group.label!r}"
+                f"Group labels must produce unique report directories: {group.label!r}"
             )
         output_keys.add(output_key)
         inputs.append(

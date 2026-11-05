@@ -2,9 +2,7 @@ from {{ package_name }}.interfaces.cli.parser import build_parser
 
 
 def test_analysis_parser_accepts_config():
-    args = build_parser().parse_args(
-        ["analysis", "--config", "custom.json", "--dry-run"]
-    )
+    args = build_parser().parse_args(["analysis", "--config", "custom.json", "--dry-run"])
     assert args.command == "analysis"
     assert str(args.config) == "custom.json"
     assert args.dry_run is True

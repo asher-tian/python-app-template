@@ -32,9 +32,7 @@ class WorkflowRunner:
         self,
         *,
         run_logger: Logger,
-        workflow_logger_factory: Callable[
-            [str, str, dict[str, object] | None], Logger
-        ],
+        workflow_logger_factory: Callable[[str, str, dict[str, object] | None], Logger],
     ) -> None:
         self._executor = ThreadPoolExecutor(thread_name_prefix="workflow")
         self._run_logger = run_logger

@@ -38,9 +38,7 @@ class LogRouterHandler(logging.Handler):
         execution_id = str(getattr(record, "execution_id", "unknown"))
         handler = self._workflow_handlers.get(execution_id)
         if handler is None:
-            workflow_name = _safe_filename(
-                str(getattr(record, "workflow_name", "workflow"))
-            )
+            workflow_name = _safe_filename(str(getattr(record, "workflow_name", "workflow")))
             safe_execution_id = _safe_filename(execution_id)
             path = self._workflow_dir / f"{workflow_name}_{safe_execution_id}.jsonl"
             handler = logging.FileHandler(path, encoding="utf-8")

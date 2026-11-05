@@ -37,8 +37,7 @@ def test_jsonl_routes_run_and_workflow_logs_and_keeps_traceback_out_of_console(
     ]
     workflow_path = run_dir / "workflows" / "analysis_0001.jsonl"
     workflow_records = [
-        json.loads(line)
-        for line in workflow_path.read_text(encoding="utf-8").splitlines()
+        json.loads(line) for line in workflow_path.read_text(encoding="utf-8").splitlines()
     ]
 
     assert run_records[0]["message"] == "Run started"
