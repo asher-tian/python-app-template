@@ -1,0 +1,50 @@
+"""Map CLI schema objects to framework-independent Workflow inputs."""
+
+import re
+from pathlib import Path
+
+from {{ package_name }}.core.workflows.analysis.models import (
+    AnalysisOptions,
+    AnalysisWorkflowInput,
+)
+from {{ package_name }}.interfaces.cli.configuration.analysis.schema import (
+    AnalysisConfigSchema,
+)
+
+
+def _safe_path_component(value: str) -> str:
+    return re.sub(r"[^A-Za-z0-9_.-]+", "-", value).strip(".-_") or "group"
+
+
+def map_analysis_config(
+    config: AnalysisConfigSchema,
+    config_path: Path,
+) -> tuple[Path, tuple[AnalysisWorkflowInput, ...]]:
+    base_dir = config_path.resolve().parent
+    workpath = config.workpath
+    if not workpath.is_absolute():
+        workpath = base_dir / workpath
+    workpath = workpath.resolve()
+
+    inputs: list[AnalysisWorkflowInput] = []
+    output_keys: set[str] = set()
+    for group in config.groups:
+        output_key = f"reports/{_safe_path_component(group.label)}/index.html"
+        if output_key in output_keys:
+            raise ValueError(
+                "Group labels must produce unique report directories: "
+                f"{group.label!r}"
+            )
+        output_keys.add(output_key)
+        inputs.append(
+            AnalysisWorkflowInput(
+                label=group.label,
+                item_count=group.item_count,
+                output_key=output_key,
+                options=AnalysisOptions(
+                    enable_optional_task=group.options.enable_optional_task,
+                ),
+            )
+        )
+
+    return workpath, tuple(inputs)

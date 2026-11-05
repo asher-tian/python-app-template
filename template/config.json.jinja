@@ -1,20 +1,26 @@
 {
   "workpath": "./workspace",
-  "log_dir": "logs",
-  "execution": {
-    "cpu_budget": 4,
-    "reserve_cpu": 1,
-    "max_concurrent_tasks": 3,
-    "max_inflight_per_task": 2,
-    "chunk_size": 1000
-  },
-  "database": {
-    "enabled": false,
-    "path": "state.sqlite3"
-  },
-  "tasks": [
-    {"label": "alpha", "item_count": 5000, "compute_enabled": true},
-    {"label": "beta", "item_count": 3000, "compute_enabled": true},
-    {"label": "gamma", "item_count": 2000, "compute_enabled": false}
+  "groups": [
+    {
+      "label": "alpha",
+      "item_count": 5000,
+      "options": {
+        "enable_optional_task": true
+      }
+    },
+    {
+      "label": "beta",
+      "item_count": 3000,
+      "options": {
+        "enable_optional_task": false
+      }
+    },
+    {
+      "label": "gamma",
+      "item_count": 2000,
+      "options": {
+        "enable_optional_task": true
+      }
+    }
   ]
 }

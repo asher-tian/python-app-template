@@ -1,0 +1,25 @@
+"""Business input, options, and result models for AnalysisWorkflow."""
+
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class AnalysisOptions:
+    enable_optional_task: bool = False
+
+
+@dataclass(frozen=True)
+class AnalysisWorkflowInput:
+    label: str
+    item_count: int
+    output_key: str
+    options: AnalysisOptions
+
+
+@dataclass(frozen=True)
+class AnalysisWorkflowResult:
+    label: str
+    item_count: int
+    total: int
+    optional_value: int | None
+    report_key: str

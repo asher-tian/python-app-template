@@ -1,63 +1,57 @@
 # {{ project_name }}
 
-由 dev-templates/python-app 模板生成。默认提供 CLI 入口，Application Core 与交互入口解耦，便于未来增加 Web API 或 SDK。
+由 Python App Copier 模板生成。默认提供 CLI 接口，业务 Core 与外部接口、基础设施实现解耦。
 
 ## 架构
 
-- `core/`：Application API、Use Case、Task、Step、业务模型和 Ports；不依赖 CLI/Web 框架或具体基础设施。
-- `interfaces/`：CLI 等输入适配器。未来可增加 Web API、SDK。
-- `infrastructure/`：Compute、Database、Storage、Logging 等技术实现。
-- `runtime/`：Bootstrap、配置、Task 调度和资源生命周期。
-- `tests/`：核心逻辑与入口测试。
+- core/workflows：完整、独立的业务闭环。
+- core/tasks：Workflow 组合的独立业务单元。
+- core/components：按需放置可复用的纯功能模块，不使用注册表。
+- core/ports：Core 需要的外部能力契约。
+- interfaces/cli：命令入口、配置 Schema、Loader 和 Mapper。
+- infrastructure：进程池、日志、文件存储及可选基础设施适配器。
+- runtime：WorkflowRunner、共享资源创建和生命周期管理。
 
-依赖方向：Interfaces -> Core；Infrastructure -> Core Ports；Runtime/Bootstrap 负责装配。Core 不依赖外层。
+一个 Command 选择一个 Workflow。配置可以包含多个执行输入；每个输入创建一个独立 Workflow 实例。Workflow 之间不共享业务状态，也不合并业务结果。
 
-## 环境与运行
+## 并发模型
+
+WorkflowRunner 固定使用 ThreadPoolExecutor 并发运行 Workflow 实例。所有 Workflow 共享 Runtime 创建的 ProcessPoolExecutor，只有 CPU 密集计算才提交到该进程池。
+
+应用不配置 CPU/MEM 预算。线程池和进程池采用 Python 标准库默认 Worker 策略。Workflow 和 Task 不得自行创建执行池。
+
+ProcessPool worker 必须是模块顶层可导入函数，只接收可序列化的数据参数并返回可序列化结果。不要传递 Task、Workflow、Logger、数据库连接或 Executor。
+
+## 配置
+
+示例 config.json 定义 workpath 和多个 groups。CLI Schema 负责校验外部 JSON；Mapper 将每个 group 转换为 AnalysisWorkflowInput。Core 不依赖 Pydantic 或 JSON。
+
+未来增加 Web 时，可以定义独立的 Request Schema 和 Mapper；只要映射到相同 Workflow Input，就可以复用 Workflow 和 Task。当前模板不包含 Web 实现。
+
+## 日志与运行产物
+
+CLI 日志位于 workpath/logs/{command}/{date}/{time}_{run_id}/：
+
+- run.jsonl：命令级事件和 Workflow 执行摘要。
+- workflows/{workflow_name}_{execution_id}.jsonl：单次 Workflow 的详细日志，包括其 Task 日志。
+- manifest.json：运行元数据、完整有效配置（敏感字段脱敏）、环境信息和执行状态。
+
+JSONL 每条日志占一行。异常堆栈作为 exception.stacktrace 字符串保存；Console 只显示异常摘要，不显示堆栈。
+
+## 运行
 
 需要 Python {{ python_version }} 和 uv。
 
-```bash
-uv sync --all-groups
-uv run {{ package_name }} --config config.json analyze
-# --cpu 覆盖 CPU 预算，参数放在子命令之前
-uv run {{ package_name }} --cpu 4 analyze
-# 仅校验配置，不启动 worker
-uv run {{ package_name }} --config config.json analyze --dry-run
-```
-
-模板使用 spawn 启动共享 ProcessPool；worker 只接收可序列化 DTO 和基础数据，不传递 Task、Logger、数据库连接、Kafka 客户端、Executor 或 Runtime 对象。
-
-## 配置与运行产物
-
-`config.json` 示例包含多个 Task、并发上限、CPU 预算、Chunk 大小、工作目录、日志目录和可选 SQLite。
-
-- `execution.cpu_budget`：应用可使用的 CPU 核心预算；`reserve_cpu` 预留核心数，计算进程数为两者之差且至少为 1。CLI 的 `--cpu` 覆盖预算。
-- `execution.max_concurrent_tasks`：同时运行的 Task 数。
-- `execution.max_inflight_per_task`：单个 Task 未完成的计算提交数上限。
-- `database.enabled`：默认关闭；启用后使用 SQLite 保存 Task 结果。
-- 报告写入 `workpath/reports/`，文件名包含 Task ID，避免同名 Task 覆盖。
-- 日志写入 `workpath/logs/`：每次运行一份汇总日志，每个 Task 一份独立日志。
-
-资源预算需结合 Task 工作集、进程间数据复制、外部工具进程和 worker RSS 校准；worker 数不是内存限制。
-
-## 扩展
-
-### 增加命令
-在 `interfaces/cli/commands/` 增加命令适配器，并在 parser 注册参数。命令只负责把 CLI 输入转换为 Core 请求。
-
-### 增加 Task / Step
-在 `core/application/tasks/` 定义完整工作流，在 `steps/` 实现业务步骤。Task 通过 Ports 使用外部能力，不直接创建进程池、数据库连接或消息客户端。
-
-### 增加基础设施
-在 `core/ports/` 定义应用需要的接口，在 `infrastructure/` 提供实现，并在 `runtime/bootstrap.py` 装配。不要为未使用的技术预先引入依赖。
-
-### 增加 Web API
-新增 `interfaces/web/`，将 HTTP 请求转换为 Core 请求并调用同一个 Application。长任务建议由 API 提交 Run/Task Spec 到队列，再由独立 Worker Runtime 执行；不要在每个 Web Server worker 内创建一套无协调的进程池。
+    uv sync --all-groups
+    uv run {{ package_name }} analysis --config config.json
+    uv run {{ package_name }} analysis --config config.json --dry-run
 
 ## 检查
 
-```bash
-uv run ruff check .
-uv run ruff format --check .
-uv run pytest
-```
+    uv run ruff check .
+    uv run ruff format --check .
+    uv run pytest
+
+## 扩展
+
+增加 Workflow 时，分别定义 Core Workflow Input、Workflow 和 CLI Config Schema/Loader/Mapper。Task 由 Workflow 显式组合。需要数据库或消息系统时，在 core/ports 定义最小契约，在 infrastructure 实现适配器，并由 runtime/bootstrap.py 注入。不要为了未来可能性预先引入 Kafka、Web 框架、Registry 或 DAG Engine。

@@ -1,0 +1,37 @@
+"""Shared application resources and their lifecycle."""
+
+from dataclasses import dataclass
+
+from {{ package_name }}.infrastructure.execution.process_pool import ProcessPoolCompute
+from {{ package_name }}.infrastructure.logging.manager import LoggingManager
+from {{ package_name }}.infrastructure.manifest import RunManifest
+from {{ package_name }}.infrastructure.storage.local import LocalArtifactStore
+from {{ package_name }}.runtime.workflow_runner import WorkflowRunner
+
+
+@dataclass
+class ApplicationRuntime:
+    workflow_runner: WorkflowRunner
+    compute: ProcessPoolCompute
+    storage: LocalArtifactStore
+    logging: LoggingManager
+    manifest: RunManifest
+    _closed: bool = False
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        try:
+            self.workflow_runner.close()
+        finally:
+            try:
+                self.compute.close()
+            finally:
+                self.logging.close()
+                self._closed = True
+
+    def __enter__(self) -> "ApplicationRuntime":
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback) -> None:
+        self.close()

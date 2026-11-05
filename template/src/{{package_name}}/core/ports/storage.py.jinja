@@ -1,9 +1,9 @@
-"""Artifact storage port."""
+"""Artifact storage capability required by application workflows."""
 
 from typing import Protocol
 
 
 class ArtifactStore(Protocol):
     def write_text(self, key: str, content: str) -> str:
-        """Persist UTF-8 text and return its logical artifact key."""
+        """Persist UTF-8 text under a safe relative key and return that key."""
         ...

@@ -1,0 +1,68 @@
+"""CLI command adapter for AnalysisWorkflow."""
+
+import uuid
+from pathlib import Path
+
+from {{ package_name }}.infrastructure.logging.manager import create_run_directory
+from {{ package_name }}.runtime.bootstrap import create_analysis_workflow, create_runtime
+from {{ package_name }}.interfaces.cli.configuration.analysis.loader import (
+    load_analysis_config,
+)
+from {{ package_name }}.interfaces.cli.configuration.analysis.mapper import (
+    map_analysis_config,
+)
+
+
+class AnalysisCommand:
+    def execute(self, config_path: Path, *, dry_run: bool = False) -> int:
+        config = load_analysis_config(config_path)
+        workpath, workflow_inputs = map_analysis_config(config, config_path)
+
+        if dry_run:
+            print(f"Configuration valid; Workflow executions: {len(workflow_inputs)}")
+            return 0
+
+        workpath.mkdir(parents=True, exist_ok=True)
+        run_id = uuid.uuid4().hex[:12]
+        run_dir = create_run_directory(workpath, "analysis", run_id)
+        effective_config = config.model_dump(mode="json")
+        effective_config["workpath"] = str(workpath)
+
+        runtime = create_runtime(
+            workpath=workpath,
+            command="analysis",
+            run_id=run_id,
+            run_dir=run_dir,
+            config_source=str(config_path.resolve()),
+            effective_config=effective_config,
+        )
+        run_logger = runtime.logging.run_logger()
+        run_logger.info(
+            "Run started; workflow=analysis executions=%d",
+            len(workflow_inputs),
+        )
+
+        outcomes = []
+        try:
+            outcomes = runtime.workflow_runner.run(
+                workflow_name="analysis",
+                workflow_factory=lambda logger: create_analysis_workflow(runtime, logger),
+                inputs=workflow_inputs,
+                metadata_factory=lambda item: {"label": item.label},
+            )
+            failed = sum(not outcome.success for outcome in outcomes)
+            status = "failed" if failed else "success"
+            run_logger.info(
+                "Run finished; total=%d succeeded=%d failed=%d",
+                len(outcomes),
+                len(outcomes) - failed,
+                failed,
+            )
+            runtime.manifest.finish(outcomes, status)
+            return 1 if failed else 0
+        except Exception:
+            run_logger.exception("Command execution failed")
+            runtime.manifest.finish(outcomes, "failed")
+            return 2
+        finally:
+            runtime.close()

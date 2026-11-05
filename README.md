@@ -1,79 +1,66 @@
 # Python App Template
 
-A reusable [Copier](https://copier.readthedocs.io/) template for building maintainable Python applications.
+A reusable Copier template for maintainable Python applications.
 
-The generated project uses a CLI interface by default and keeps the application core independent from its delivery interfaces. It can be extended with Web APIs, SDKs, and additional infrastructure adapters as needed.
+The generated project starts with a CLI interface and keeps Workflow business logic independent from the input mechanism. Future interfaces such as Web APIs can map their requests to the same Workflow input models without changing Core.
 
 ## Quick start
 
-Install Copier and run:
-
-```bash
+~~~bash
 copier copy gh:asher-tian/python-app-template ./my-app
-```
-
-For reproducible generation, pin to a specific commit (or a release tag when one is published):
-
-```bash
-copier copy --vcs-ref 1a1085b4b4cbb517d3033882944cc66cd01f1692 gh:asher-tian/python-app-template ./my-app
-```
-
-Copier downloads this template directly from GitHub. You do not need to clone the `dev-templates` catalog or this repository manually.
-
-## Initialize the generated project
-
-```bash
 cd my-app
 uv sync --all-groups
 uv run pytest
 uv run ruff check .
 uv run ruff format --check .
-```
+~~~
 
-The template asks for the project display name, distribution name, Python package name, and Python version.
+Copier downloads this template directly from GitHub. Cloning the dev-templates catalog is not required.
 
 ## Architecture
 
-The generated project is organized into these layers:
+- Core contains Workflows, Tasks, functional components, business input/result models, and Ports.
+- Interfaces contains delivery adapters. The initial template provides CLI commands and CLI-specific configuration schemas.
+- Runtime owns WorkflowRunner and shared execution resource lifecycles.
+- Infrastructure provides concrete ProcessPool, logging, filesystem storage, and optional database adapters.
 
-- `core/`: application API, use cases, Tasks, Steps, business models, and ports. It does not depend on CLI frameworks or concrete infrastructure.
-- `interfaces/`: delivery adapters. The initial template includes a CLI interface.
-- `infrastructure/`: concrete implementations for compute, database, storage, and logging.
-- `runtime/`: configuration, composition root, scheduling, and resource lifecycle.
-- `tests/`: application, infrastructure, CLI, runtime, and process-pool tests.
+One Command selects one Workflow type. Its configuration may contain multiple inputs; each input creates a fresh, independent Workflow instance. WorkflowRunner uses ThreadPoolExecutor for Workflow-level concurrency. All Workflows share one ProcessPoolExecutor for CPU-intensive functions.
 
-The example runtime uses a thread-based Task scheduler and one shared spawn-based ProcessPool for CPU-intensive work. SQLite persistence is optional and disabled by default.
+There is no Task Registry, Component Registry, Step framework, DAG engine, distributed scheduler, or CPU/MEM resource configuration.
 
 ## Configuration
 
-The generated project includes a sample `config.json` with:
+Each exposed Workflow has an external CLI Config Schema, Loader, and Mapper. The Mapper converts validated input into a Core Workflow Input. Task-specific option models are added only when a Task genuinely needs them.
 
-- Work directory and log directory.
-- CPU budget and reserved CPU count.
-- Maximum concurrent Tasks.
-- Per-Task in-flight compute limit and chunk size.
-- Optional SQLite persistence.
-- Multiple example Task groups.
+A future Web interface may define a separate Request Schema and Mapper. Both interfaces can map to the same Workflow Input. The template does not pre-create Web code.
 
-See the generated project's README and AGENTS.md for implementation and extension guidance.
+## Logging
 
-## Update an existing project
+CLI runs create a Run Directory under the configured workpath:
 
-Copier records the source template and revision in the generated project. To check for and apply template updates later, run:
+~~~text
+logs/
+└── analysis/
+    └── YYYY-MM-DD/
+        └── HH-MM-SS-mmm_runid/
+            ├── run.jsonl
+            ├── manifest.json
+            └── workflows/
+                ├── analysis_0001.jsonl
+                └── analysis_0002.jsonl
+~~~
 
-```bash
-copier update
-```
+Run logs contain command-level events and Workflow summaries. Each Workflow Execution has one detailed JSONL file; its Task logs are written to that file. Console output is human-readable and omits tracebacks. JSONL files preserve structured exception details, including the full stack trace.
 
-Review the resulting diff and run the project's checks before accepting an update.
+The manifest records the effective configuration with sensitive values redacted, application metadata, runtime environment, execution statuses, and log paths.
 
-## Development and validation
+## Template development
 
-The repository CI generates a fresh project from this template, installs its dependencies, and runs Ruff and pytest.
+The repository CI generates a fresh project with Copier, installs dependencies, and runs Ruff and pytest.
 
 To validate locally:
 
-```bash
+~~~bash
 copier copy --defaults \
   --data "project_name=Template Validation" \
   --data "project_slug=template-validation" \
@@ -86,8 +73,13 @@ uv sync --all-groups
 uv run ruff check .
 uv run ruff format --check .
 uv run pytest
-```
+uv run template_validation analysis --config config.json --dry-run
+~~~
+
+## Updating generated projects
+
+Copier records the source template and revision. Use copier update to review template changes in an existing generated project. Review the diff and run all checks before accepting updates.
 
 ## Related repository
 
-- [dev-templates](https://github.com/asher-tian/dev-templates): the catalog and entry point for all project templates.
+- [dev-templates](https://github.com/asher-tian/dev-templates): template catalog and entry point.

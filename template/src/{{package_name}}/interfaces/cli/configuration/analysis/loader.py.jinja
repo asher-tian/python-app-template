@@ -1,0 +1,24 @@
+"""Load and validate the external Analysis CLI configuration."""
+
+import json
+from pathlib import Path
+
+from pydantic import ValidationError
+
+from {{ package_name }}.interfaces.cli.configuration.analysis.schema import (
+    AnalysisConfigSchema,
+)
+
+
+def load_analysis_config(path: Path) -> AnalysisConfigSchema:
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Invalid JSON configuration: {exc}") from exc
+    except OSError as exc:
+        raise ValueError(f"Cannot read configuration file {path}: {exc}") from exc
+
+    try:
+        return AnalysisConfigSchema.model_validate(raw)
+    except ValidationError as exc:
+        raise ValueError(f"Configuration validation failed:\n{exc}") from exc

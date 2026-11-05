@@ -2,40 +2,60 @@
 
 ## 架构边界
 
-- `core/` 包含业务模型、Use Case、Task、Step 和 Ports；不得依赖 CLI、Web 框架或具体基础设施 SDK。
-- `interfaces/` 是输入/输出适配器。CLI、Web API、SDK 调用同一 Application API，不在入口层实现业务流程。
-- `infrastructure/` 实现 Core Ports，例如 Compute、Database、Storage、Logging 和消息集成。
-- `runtime/` 与 Bootstrap 负责装配具体实现、调度策略和资源生命周期。
-- 依赖方向必须指向 Core：Interfaces -> Core；Infrastructure -> Core Ports；Bootstrap -> 各层。Core 不依赖外层。
-- 不要为了未来可能性预先引入 Kafka、Redis、Web 框架或分布式调度器。
+- Command 是外部接口适配器，只负责解析输入、调用配置映射并启动 WorkflowRunner。
+- 每个 Workflow 表示一个完整、独立的业务闭环；多个输入会创建多个相互隔离的 Workflow 实例。
+- Workflow 根据自己的输入决定执行哪些 Task，并负责 Task 之间的业务编排。
+- Task 是独立业务单元。不要强制所有 Task 继承 BaseTask。
+- 不建立正式 Step 抽象。Task 内部简单操作使用普通函数和模块。
+- 可复用功能使用普通函数或组件模块，不建立 Component Registry。
+- 不建立 Task Registry、DAG Engine、分布式调度或通用插件框架。
+- Core 不依赖 CLI、HTTP、Pydantic、配置文件格式或具体基础设施 SDK。
+- Interface Schema 负责外部输入校验和默认值；Mapper 将其转换为 Core Workflow Input。
+- 依赖方向：Interfaces -> Core；Infrastructure 实现 Core Ports；Runtime/Bootstrap 负责装配。
 
-## Task、Step 与并发
+## 并发与资源
 
-- Task 是一个完整业务工作单元；Step 是 Task 内部步骤。Command 只负责解析入口参数、转换请求和调用 Application。
-- TaskScheduler 管理 Task 并发；共享 Compute Provider 管理 CPU 计算。Task/Step 不得自行创建全局线程池或进程池。
-- ProcessPool worker 必须是模块顶层函数；只传递可序列化 DTO/基础数据，不传递 Task、Logger、数据库连接、Kafka 客户端、Executor 或 Runtime 对象。
-- 线程共享对象必须有明确线程安全约定。SQLite Connection 不跨线程/进程共享；按操作创建连接，保持事务短小。
-- 外部子进程也消耗 CPU 和内存，资源规划不能只计算 Python worker 数量。
-- 长任务使用 run_id/task_id 关联状态、日志和产物；分布式任务队列仅在确有需要时引入。
+- WorkflowRunner 固定使用 ThreadPoolExecutor，负责多个 Workflow 实例的并发。
+- ComputeExecutor 使用一个共享 ProcessPoolExecutor，负责 CPU 密集计算。
+- Runtime 创建并关闭两种执行资源；Workflow 和 Task 不得自行创建线程池或进程池。
+- ProcessPool worker 必须是模块顶层函数；只传递可序列化函数参数和结果，不传递 Workflow、Task、Logger、数据库连接、Executor 或 Runtime 对象。
+- Worker 默认只执行计算并返回结果；业务日志由主进程记录。
+- Workflow 实例及其 Task 实例不得跨执行实例共享可变状态。
+- 不提供 CPU、MEM、worker 数量等用户资源配置。
+
+## 日志与运行记录
+
+- Logging 是 Runtime 管理的横切基础设施；Core 只使用注入的 Logger。
+- CLI 使用 Run Directory、JSONL 日志和 manifest.json。
+- Run 与 Workflow Execution 使用独立日志文件；Task 日志写入所属 Workflow 日志。
+- 业务字段（例如 label）只能作为可选 metadata，不能成为通用 Runtime 必需字段。
+- Console 不输出异常堆栈；File JSONL 保存完整异常信息。
+- 不允许多个进程直接写同一个日志文件。
+
+## 配置与扩展
+
+- 每个 Workflow 定义自己的业务输入模型和 Options。
+- CLI 为实际暴露的 Workflow 定义对应 Config Schema、Loader 和 Mapper。
+- Task 仅在参数复杂且有明确业务意义时定义自己的参数模型；不要求独立外部 Schema。
+- 未来增加 Web 时，新增 Web Request Schema 和 Mapper，映射到同一个 Workflow Input；当前不预建 Web 实现。
+- Database、Kafka、Storage 等按需通过 Port 和 Infrastructure Adapter 集成，不为未使用的组件引入依赖。
 
 ## 工具链
 
-- 使用 uv 管理 Python 解释器、虚拟环境和依赖；不要将项目依赖安装到全局 Python。
+- 使用 uv 管理 Python 环境和依赖。
 - 保持 src 布局；运行依赖放在 project.dependencies，开发依赖放在 dependency-groups.dev。
 - 修改 Python 版本时同步检查 .python-version、pyproject.toml、Dev Container 和 CI。
 - 仅在确有必要时增加依赖，并说明原因。
 
 ## 常用检查
 
-```bash
-uv sync --all-groups
-uv run ruff check .
-uv run ruff format --check .
-uv run pytest
-```
+    uv sync --all-groups
+    uv run ruff check .
+    uv run ruff format --check .
+    uv run pytest
 
 ## 安全与完成标准
 
+- Manifest 保存完整有效配置，但必须递归脱敏密码、Token、密钥等敏感字段。
 - 不提交 .env、令牌、密码、私钥或个人认证缓存。
-- 不挂载整个宿主机用户目录。
 - 未实际运行的检查不得报告为通过。

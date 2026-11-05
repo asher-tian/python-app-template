@@ -1,0 +1,68 @@
+import json
+
+import pytest
+
+from {{ package_name }}.interfaces.cli.configuration.analysis.loader import (
+    load_analysis_config,
+)
+from {{ package_name }}.interfaces.cli.configuration.analysis.mapper import (
+    map_analysis_config,
+)
+
+
+def test_config_maps_groups_to_independent_workflow_inputs(tmp_path):
+    config_path = tmp_path / "analysis.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "workpath": "./workspace",
+                "groups": [
+                    {
+                        "label": "alpha",
+                        "item_count": 5,
+                        "options": {"enable_optional_task": True},
+                    },
+                    {"label": "beta", "item_count": 3},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    config = load_analysis_config(config_path)
+    workpath, inputs = map_analysis_config(config, config_path)
+
+    assert workpath == (tmp_path / "workspace").resolve()
+    assert len(inputs) == 2
+    assert inputs[0].label == "alpha"
+    assert inputs[0].options.enable_optional_task is True
+    assert inputs[0].output_key == "reports/alpha/index.html"
+    assert inputs[1].options.enable_optional_task is False
+
+
+def test_config_rejects_unknown_fields(tmp_path):
+    config_path = tmp_path / "analysis.json"
+    config_path.write_text(
+        json.dumps({"groups": [{"label": "alpha", "unknown": True}]}),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="validation failed"):
+        load_analysis_config(config_path)
+
+
+def test_mapper_rejects_colliding_output_paths(tmp_path):
+    config_path = tmp_path / "analysis.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "groups": [
+                    {"label": "alpha beta"},
+                    {"label": "alpha-beta"},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    config = load_analysis_config(config_path)
+    with pytest.raises(ValueError, match="unique report directories"):
+        map_analysis_config(config, config_path)

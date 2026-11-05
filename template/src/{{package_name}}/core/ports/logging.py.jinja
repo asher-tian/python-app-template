@@ -1,13 +1,17 @@
-"""Logging capability required by application Tasks."""
+"""Minimal logging capability used by Core."""
 
-import logging
 from typing import Protocol
 
 
-class TaskLoggerProvider(Protocol):
-    def task_logger(
-        self,
-        run_id: str,
-        task_id: str,
-        label: str,
-    ) -> logging.LoggerAdapter: ...
+class Logger(Protocol):
+    def bind(self, **context: object) -> "Logger": ...
+
+    def debug(self, message: str, *args: object) -> None: ...
+
+    def info(self, message: str, *args: object) -> None: ...
+
+    def warning(self, message: str, *args: object) -> None: ...
+
+    def error(self, message: str, *args: object) -> None: ...
+
+    def exception(self, message: str, *args: object) -> None: ...

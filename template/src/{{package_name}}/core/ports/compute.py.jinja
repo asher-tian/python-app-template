@@ -1,4 +1,4 @@
-"""Compute capability required by CPU-intensive application steps."""
+"""CPU computation capability required by application workflows."""
 
 from collections.abc import Callable
 from concurrent.futures import Future
@@ -15,5 +15,5 @@ class ComputeExecutor(Protocol):
         *args: object,
         **kwargs: object,
     ) -> Future[T]:
-        """Submit one serializable job to the configured compute provider."""
+        """Submit a serializable CPU-bound function to the shared process pool."""
         ...

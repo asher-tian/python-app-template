@@ -1,0 +1,111 @@
+"""Run-scoped logger creation and logging resource lifecycle."""
+
+import logging
+from datetime import datetime
+from pathlib import Path
+from typing import Any
+
+from {{ package_name }}.core.ports.logging import Logger
+from {{ package_name }}.infrastructure.logging.handlers import LogRouterHandler
+
+
+class ContextLogger:
+    def __init__(self, logger: logging.Logger, context: dict[str, object]) -> None:
+        self._logger = logger
+        self._context = context
+
+    def bind(self, **context: object) -> "ContextLogger":
+        return ContextLogger(self._logger, {**self._context, **context})
+
+    def _log(self, method: str, message: str, *args: object) -> None:
+        getattr(self._logger, method)(message, *args, extra=self._context)
+
+    def debug(self, message: str, *args: object) -> None:
+        self._log("debug", message, *args)
+
+    def info(self, message: str, *args: object) -> None:
+        self._log("info", message, *args)
+
+    def warning(self, message: str, *args: object) -> None:
+        self._log("warning", message, *args)
+
+    def error(self, message: str, *args: object) -> None:
+        self._log("error", message, *args)
+
+    def exception(self, message: str, *args: object) -> None:
+        self._logger.exception(message, *args, extra=self._context)
+
+
+def create_run_directory(workpath: Path, command: str, run_id: str) -> Path:
+    now = datetime.now().astimezone()
+    date_part = now.strftime("%Y-%m-%d")
+    time_part = now.strftime("%H-%M-%S-%f")[:-3]
+    run_dir = workpath / "logs" / command / date_part / f"{time_part}_{run_id}"
+    run_dir.mkdir(parents=True, exist_ok=False)
+    return run_dir
+
+
+class LoggingManager:
+    def __init__(
+        self,
+        *,
+        logger_name: str,
+        run_dir: Path,
+        command: str,
+        run_id: str,
+    ) -> None:
+        self._logger = logging.getLogger(logger_name)
+        self._previous_handlers = self._logger.handlers[:]
+        self._previous_level = self._logger.level
+        self._previous_propagate = self._logger.propagate
+
+        for handler in self._previous_handlers:
+            self._logger.removeHandler(handler)
+
+        self._router = LogRouterHandler(run_dir)
+        self._logger.addHandler(self._router)
+        self._logger.setLevel(logging.DEBUG)
+        self._logger.propagate = False
+
+        self._command = command
+        self._run_id = run_id
+        self._closed = False
+
+    def run_logger(self) -> Logger:
+        return ContextLogger(
+            self._logger,
+            {
+                "scope": "run",
+                "run_id": self._run_id,
+                "command": self._command,
+            },
+        )
+
+    def workflow_logger(
+        self,
+        workflow_name: str,
+        execution_id: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> Logger:
+        return ContextLogger(
+            self._logger,
+            {
+                "scope": "workflow",
+                "run_id": self._run_id,
+                "command": self._command,
+                "workflow_name": workflow_name,
+                "execution_id": execution_id,
+                "metadata": metadata or {},
+            },
+        )
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._logger.removeHandler(self._router)
+        self._router.close()
+        for handler in self._previous_handlers:
+            self._logger.addHandler(handler)
+        self._logger.setLevel(self._previous_level)
+        self._logger.propagate = self._previous_propagate
+        self._closed = True

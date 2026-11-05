@@ -45,3 +45,7 @@ jobs:
       - name: Test
         working-directory: generated
         run: uv run pytest
+
+      - name: CLI smoke test
+        working-directory: generated
+        run: uv run template_validation analysis --config config.json --dry-run

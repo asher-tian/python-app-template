@@ -1,0 +1,49 @@
+import time
+
+from {{ package_name }}.infrastructure.logging.manager import LoggingManager
+from {{ package_name }}.runtime.workflow_runner import WorkflowRunner
+
+
+class FakeWorkflow:
+    def __init__(self, logger) -> None:
+        self._logger = logger
+
+    def execute(self, value: int) -> int:
+        self._logger.bind(task_name="fake").info("Processing value=%d", value)
+        time.sleep(0.02)
+        if value == 2:
+            raise ValueError("intentional failure")
+        return value * 10
+
+
+def test_workflow_runner_isolates_executions_and_continues_after_failure(tmp_path):
+    logging_manager = LoggingManager(
+        logger_name="test.workflow_runner",
+        run_dir=tmp_path / "logs",
+        command="analysis",
+        run_id="run-1",
+    )
+    runner = WorkflowRunner(
+        run_logger=logging_manager.run_logger(),
+        workflow_logger_factory=logging_manager.workflow_logger,
+    )
+    try:
+        outcomes = runner.run(
+            workflow_name="analysis",
+            workflow_factory=FakeWorkflow,
+            inputs=[1, 2, 3],
+            metadata_factory=lambda value: {"input": value},
+        )
+    finally:
+        runner.close()
+        logging_manager.close()
+
+    assert [outcome.execution_id for outcome in outcomes] == [
+        "0001",
+        "0002",
+        "0003",
+    ]
+    assert [outcome.success for outcome in outcomes] == [True, False, True]
+    assert [outcome.result for outcome in outcomes] == [10, None, 30]
+    assert outcomes[1].error == "ValueError: intentional failure"
+    assert outcomes[1].metadata == {"input": 2}
