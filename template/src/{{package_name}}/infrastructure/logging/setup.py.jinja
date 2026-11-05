@@ -1,0 +1,216 @@
+"""Queue-based logging for the main process and spawned compute workers."""
+
+import copy
+import logging
+import multiprocessing as mp
+import re
+from datetime import datetime
+from logging.handlers import QueueHandler, QueueListener
+from pathlib import Path
+from typing import Any
+
+_CONTEXT_DEFAULTS = {
+    "run_id": "-",
+    "scope": "run",
+    "task_id": "-",
+    "task_label": "-",
+    "step": "-",
+    "chunk_id": "-",
+    "source": "main",
+}
+
+
+class ContextQueueHandler(QueueHandler):
+    """Make LogRecords pickle-safe and ensure every formatter field exists."""
+
+    def prepare(self, record: logging.LogRecord) -> logging.LogRecord:
+        prepared = copy.copy(record)
+        message = record.getMessage()
+        if record.exc_info:
+            message = f"{message}\n{logging.Formatter().formatException(record.exc_info)}"
+        prepared.msg = message
+        prepared.args = None
+        prepared.exc_info = None
+        prepared.exc_text = None
+
+        for key, default in _CONTEXT_DEFAULTS.items():
+            if not hasattr(prepared, key):
+                setattr(prepared, key, default)
+        return prepared
+
+
+def configure_worker_logging(log_queue: Any) -> None:
+    """Install the shared queue handler in a spawned worker process."""
+    root = logging.getLogger()
+    for handler in root.handlers[:]:
+        root.removeHandler(handler)
+    root.setLevel(logging.DEBUG)
+    root.addHandler(ContextQueueHandler(log_queue))
+
+
+class _LogRouter(logging.Handler):
+    def __init__(
+        self,
+        *,
+        run_handler: logging.Handler,
+        log_dir: Path,
+        timestamp: str,
+        run_id: str,
+        formatter: logging.Formatter,
+        console_handler: logging.Handler,
+    ) -> None:
+        super().__init__(logging.DEBUG)
+        self.run_handler = run_handler
+        self.log_dir = log_dir
+        self.timestamp = timestamp
+        self.run_id = run_id
+        self.formatter = formatter
+        self.console_handler = console_handler
+        self.task_handlers: dict[str, logging.FileHandler] = {}
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.run_handler.handle(record)
+
+        if getattr(record, "scope", "run") == "task":
+            task_id = str(getattr(record, "task_id", "-"))
+            if task_id not in self.task_handlers:
+                label = str(getattr(record, "task_label", "task"))
+                safe_label = (
+                    re.sub(
+                        r"[^A-Za-z0-9_.-]+",
+                        "-",
+                        label,
+                    ).strip(".-")
+                    or "task"
+                )
+                handler = logging.FileHandler(
+                    self.log_dir / (f"{safe_label}_{self.timestamp}_{self.run_id}_{task_id}.log"),
+                    encoding="utf-8",
+                )
+                handler.setLevel(logging.DEBUG)
+                handler.setFormatter(self.formatter)
+                self.task_handlers[task_id] = handler
+            self.task_handlers[task_id].handle(record)
+
+        if record.levelno >= logging.INFO:
+            self.console_handler.handle(record)
+
+    def close(self) -> None:
+        for handler in self.task_handlers.values():
+            handler.close()
+        self.task_handlers.clear()
+        self.run_handler.close()
+        self.console_handler.close()
+        super().close()
+
+
+class LoggingManager:
+    def __init__(
+        self,
+        log_dir: Path,
+        command: str,
+        run_id: str,
+    ) -> None:
+        self.log_dir = log_dir
+        self.log_dir.mkdir(parents=True, exist_ok=True)
+        self.run_id = run_id
+        self.timestamp = datetime.now().astimezone().strftime("%Y-%m-%d_%H-%M-%S-%f")[:-3]
+        self.queue = mp.get_context("spawn").Queue()
+
+        formatter = logging.Formatter(
+            "%(asctime)s.%(msecs)03d %(levelname)s "
+            "[%(processName)s/%(threadName)s] "
+            "[run=%(run_id)s task=%(task_id)s label=%(task_label)s "
+            "step=%(step)s chunk=%(chunk_id)s source=%(source)s] "
+            "%(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
+        run_handler = logging.FileHandler(
+            log_dir / f"{command}_{self.timestamp}_{run_id}.log",
+            encoding="utf-8",
+        )
+        run_handler.setLevel(logging.DEBUG)
+        run_handler.setFormatter(formatter)
+
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(logging.INFO)
+        console_handler.setFormatter(
+            logging.Formatter(
+                "%(asctime)s %(levelname)s %(message)s",
+                datefmt="%H:%M:%S",
+            )
+        )
+
+        self.router = _LogRouter(
+            run_handler=run_handler,
+            log_dir=log_dir,
+            timestamp=self.timestamp,
+            run_id=run_id,
+            formatter=formatter,
+            console_handler=console_handler,
+        )
+        self.listener = QueueListener(
+            self.queue,
+            self.router,
+            respect_handler_level=True,
+        )
+        self.listener.start()
+
+        root = logging.getLogger()
+        self.previous_handlers = root.handlers[:]
+        self.previous_level = root.level
+        root.handlers.clear()
+        root.setLevel(logging.DEBUG)
+        self.queue_handler = ContextQueueHandler(self.queue)
+        root.addHandler(self.queue_handler)
+        self.closed = False
+
+    def run_logger(self) -> logging.LoggerAdapter:
+        return logging.LoggerAdapter(
+            logging.getLogger("{{ package_name }}"),
+            {
+                "run_id": self.run_id,
+                "scope": "run",
+                "task_id": "-",
+                "task_label": "-",
+                "step": "-",
+                "chunk_id": "-",
+                "source": "main",
+            },
+        )
+
+    def task_logger(
+        self,
+        run_id: str,
+        task_id: str,
+        label: str,
+    ) -> logging.LoggerAdapter:
+        return logging.LoggerAdapter(
+            logging.getLogger("{{ package_name }}"),
+            {
+                "run_id": run_id,
+                "scope": "task",
+                "task_id": task_id,
+                "task_label": label,
+                "step": "-",
+                "chunk_id": "-",
+                "source": "coordinator",
+            },
+        )
+
+    def close(self) -> None:
+        if self.closed:
+            return
+        self.listener.stop()
+
+        root = logging.getLogger()
+        root.handlers.clear()
+        for handler in self.previous_handlers:
+            root.addHandler(handler)
+        root.setLevel(self.previous_level)
+
+        self.queue_handler.close()
+        self.router.close()
+        self.queue.close()
+        self.queue.join_thread()
+        self.closed = True

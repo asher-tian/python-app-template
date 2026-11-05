@@ -1,0 +1,19 @@
+_min_copier_version: "9.0.0"
+_subdirectory: template
+project_name:
+  type: str
+  help: 项目显示名称
+  default: my-app
+project_slug:
+  type: str
+  help: Python 分发包名称（使用小写字母、数字和连字符）
+  default: "{{ project_name | lower | replace(' ', '-') | replace('_', '-') }}"
+package_name:
+  type: str
+  help: Python 导入包名称（仅使用字母、数字和下划线）
+  default: "{{ project_slug | replace('-', '_') }}"
+python_version:
+  type: str
+  help: 选择项目使用的 Python 版本
+  choices: ["3.12", "3.13", "3.14"]
+  default: "3.13"

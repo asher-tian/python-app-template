@@ -1,0 +1,12 @@
+"""Application facade independent of CLI and Web frameworks."""
+
+from {{ package_name }}.core.application.use_cases.analyze import AnalyzeUseCase
+from {{ package_name }}.core.models import AnalyzeRequest, TaskOutcome
+
+
+class Application:
+    def __init__(self, analyze_use_case: AnalyzeUseCase) -> None:
+        self._analyze_use_case = analyze_use_case
+
+    def analyze(self, request: AnalyzeRequest) -> list[TaskOutcome]:
+        return self._analyze_use_case.execute(request)

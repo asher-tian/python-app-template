@@ -1,0 +1,68 @@
+import json
+import time
+from dataclasses import dataclass
+
+from {{ package_name }}.core.models import TaskOutcome
+from {{ package_name }}.runtime.config import load_config
+from {{ package_name }}.runtime.scheduler import ThreadTaskScheduler
+
+
+def test_load_config_resolves_paths_and_cpu_override(tmp_path):
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "workpath": "./workspace",
+                "log_dir": "logs",
+                "execution": {
+                    "cpu_budget": 4,
+                    "reserve_cpu": 1,
+                    "max_concurrent_tasks": 2,
+                    "max_inflight_per_task": 3,
+                    "chunk_size": 50,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    config = load_config(config_path, cpu_override=5)
+    assert config.workpath == (tmp_path / "workspace").resolve()
+    assert config.log_dir == (tmp_path / "workspace" / "logs").resolve()
+    assert config.compute_workers == 4
+    assert config.max_inflight_per_task == 3
+
+
+def test_load_config_rejects_non_positive_cpu_override(tmp_path):
+    config_path = tmp_path / "config.json"
+    config_path.write_text("{}", encoding="utf-8")
+    try:
+        load_config(config_path, cpu_override=0)
+    except ValueError as exc:
+        assert "--cpu" in str(exc)
+    else:
+        raise AssertionError("Expected invalid CPU override to fail")
+
+
+@dataclass
+class _FakeTask:
+    task_id: str
+    label: str
+    delay: float
+
+    def run(self):
+        time.sleep(self.delay)
+        return TaskOutcome(
+            task_id=self.task_id,
+            label=self.label,
+            success=True,
+        )
+
+
+def test_task_scheduler_preserves_input_order():
+    tasks = [
+        _FakeTask("first", "first", 0.03),
+        _FakeTask("second", "second", 0.01),
+    ]
+    outcomes = ThreadTaskScheduler(max_workers=2).run(tasks)
+    assert [outcome.task_id for outcome in outcomes] == ["first", "second"]

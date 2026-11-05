@@ -1,0 +1,16 @@
+"""A Task is one complete business workflow."""
+
+from typing import Protocol
+
+from {{ package_name }}.core.models import TaskOutcome, TaskSpec
+
+
+class Task(Protocol):
+    task_id: str
+    label: str
+
+    def run(self) -> TaskOutcome: ...
+
+
+class TaskFactory(Protocol):
+    def create(self, spec: TaskSpec, run_id: str) -> Task: ...

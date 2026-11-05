@@ -1,0 +1,54 @@
+import logging
+
+from {{ package_name }}.core.application.steps.aggregate import AggregateStep
+from {{ package_name }}.core.application.steps.compute import ComputeStep
+from {{ package_name }}.infrastructure.compute.process_pool import InlineCompute
+
+
+def test_aggregate_returns_summary():
+    result = AggregateStep().execute(
+        item_count=10,
+        chunks=[],
+        compute_enabled=False,
+    )
+    assert result == {
+        "item_count": 10,
+        "total": 0,
+        "compute_enabled": False,
+        "chunk_count": 0,
+    }
+
+
+def test_compute_step_splits_chunks_and_aggregates():
+    step = ComputeStep(
+        compute=InlineCompute(),
+        chunk_size=2,
+        max_inflight=2,
+    )
+    results = step.execute(
+        values=(1, 2, 3, 4, 5),
+        run_id="run-1",
+        task_id="task-1",
+        task_label="example",
+        enabled=True,
+        logger=logging.LoggerAdapter(
+            logging.getLogger("test"),
+            {},
+        ),
+    )
+    assert [item.chunk_index for item in results] == [0, 1, 2]
+    assert [item.total for item in results] == [5, 25, 25]
+    assert sum(item.total for item in results) == 55
+
+
+def test_compute_step_can_be_disabled():
+    step = ComputeStep(InlineCompute(), chunk_size=2, max_inflight=1)
+    results = step.execute(
+        values=(1, 2, 3),
+        run_id="run-1",
+        task_id="task-1",
+        task_label="example",
+        enabled=False,
+        logger=logging.LoggerAdapter(logging.getLogger("test"), {}),
+    )
+    assert results == []

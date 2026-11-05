@@ -1,0 +1,15 @@
+"""argparse parser. CLI concerns stay outside the application core."""
+
+import argparse
+from pathlib import Path
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="{{ project_slug }}")
+    parser.add_argument("--version", action="version", version="%(prog)s 0.1.0")
+    parser.add_argument("--config", type=Path, default=Path("config.json"))
+    parser.add_argument("--cpu", type=int, default=None)
+    commands = parser.add_subparsers(dest="command", required=True)
+    analyze = commands.add_parser("analyze", help="Run the example analysis workflow")
+    analyze.add_argument("--dry-run", action="store_true")
+    return parser

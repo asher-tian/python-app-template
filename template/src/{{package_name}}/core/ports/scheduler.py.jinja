@@ -1,0 +1,11 @@
+"""Task scheduling port."""
+
+from collections.abc import Sequence
+from typing import Protocol
+
+from {{ package_name }}.core.application.tasks.base import Task
+from {{ package_name }}.core.models import TaskOutcome
+
+
+class TaskScheduler(Protocol):
+    def run(self, tasks: Sequence[Task]) -> list[TaskOutcome]: ...
