@@ -15,7 +15,7 @@ uv sync --all-groups
 uv run my_app analysis --config config.json
 ~~~
 
-默认导入包名为 \`my_app\`。如果生成项目时修改了 \`package_name\`，运行命令时使用对应的包名。
+默认导入包名为 **my_app**。如果生成项目时修改了 **package_name**，运行命令时使用对应的包名。
 
 运行检查：
 
