@@ -12,10 +12,10 @@ Install Copier and run:
 copier copy gh:asher-tian/python-app-template ./my-app
 ```
 
-Pin a template release for reproducible project generation:
+For reproducible generation, pin to a specific commit (or a release tag when one is published):
 
 ```bash
-copier copy --vcs-ref v1.0.0 gh:asher-tian/python-app-template ./my-app
+copier copy --vcs-ref 1a1085b4b4cbb517d3033882944cc66cd01f1692 gh:asher-tian/python-app-template ./my-app
 ```
 
 Copier downloads this template directly from GitHub. You do not need to clone the `dev-templates` catalog or this repository manually.
