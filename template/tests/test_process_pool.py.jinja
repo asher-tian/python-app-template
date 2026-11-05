@@ -1,0 +1,36 @@
+from {{ package_name }}.core.application.steps.compute import compute_chunk
+from {{ package_name }}.core.models import ComputeChunkInput
+from {{ package_name }}.infrastructure.compute.process_pool import ProcessPoolCompute
+from {{ package_name }}.infrastructure.logging.setup import LoggingManager
+
+
+def test_process_pool_uses_spawn_and_returns_serializable_result(tmp_path):
+    logging_manager = LoggingManager(
+        tmp_path / "logs",
+        command="test",
+        run_id="run-1",
+    )
+    compute = ProcessPoolCompute(
+        max_workers=1,
+        log_queue=logging_manager.queue,
+    )
+    try:
+        result = compute.submit(
+            compute_chunk,
+            ComputeChunkInput(
+                run_id="run-1",
+                task_id="task-1",
+                task_label="spawn-test",
+                chunk_index=0,
+                values=(1, 2, 3),
+            ),
+        ).result(timeout=30)
+    finally:
+        try:
+            compute.close()
+        finally:
+            logging_manager.close()
+
+    assert result.total == 14
+    assert result.item_count == 3
+    assert list((tmp_path / "logs").glob("spawn-test_*.log"))

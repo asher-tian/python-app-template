@@ -1,0 +1,148 @@
+"""Example Task and factory."""
+
+import logging
+import re
+import uuid
+
+from {{ package_name }}.core.application.steps.aggregate import AggregateStep
+from {{ package_name }}.core.application.steps.compute import ComputeStep
+from {{ package_name }}.core.application.steps.prepare import PrepareStep
+from {{ package_name }}.core.application.steps.report import ReportStep
+from {{ package_name }}.core.models import (
+    JsonObject,
+    TaskOutcome,
+    TaskResult,
+    TaskSpec,
+)
+from {{ package_name }}.core.ports.compute import ComputeExecutor
+from {{ package_name }}.core.ports.logging import TaskLoggerProvider
+from {{ package_name }}.core.ports.repository import TaskResultRepository
+from {{ package_name }}.core.ports.storage import ArtifactStore
+
+
+class AnalyzeTask:
+    def __init__(
+        self,
+        *,
+        spec: TaskSpec,
+        run_id: str,
+        task_id: str,
+        compute: ComputeExecutor,
+        artifacts: ArtifactStore,
+        repository: TaskResultRepository | None,
+        logger: logging.LoggerAdapter,
+        chunk_size: int,
+        max_inflight: int,
+    ) -> None:
+        self.spec = spec
+        self.run_id = run_id
+        self.task_id = task_id
+        self.label = spec.label
+        self.compute = compute
+        self.artifacts = artifacts
+        self.repository = repository
+        self.logger = logger
+        self.chunk_size = chunk_size
+        self.max_inflight = max_inflight
+
+    def run(self) -> TaskOutcome:
+        self.logger.info("Task started")
+        try:
+            values = PrepareStep().execute(self.spec, self.logger)
+            chunks = ComputeStep(
+                self.compute,
+                self.chunk_size,
+                self.max_inflight,
+            ).execute(
+                values=values,
+                run_id=self.run_id,
+                task_id=self.task_id,
+                task_label=self.label,
+                enabled=self.spec.compute_enabled,
+                logger=self.logger,
+            )
+            summary: JsonObject = AggregateStep().execute(
+                item_count=len(values),
+                chunks=chunks,
+                compute_enabled=self.spec.compute_enabled,
+            )
+            safe_label = (
+                re.sub(
+                    r"[^A-Za-z0-9_.-]+",
+                    "-",
+                    self.label,
+                ).strip(".-")
+                or "task"
+            )
+
+            artifact_key = f"reports/{safe_label}_{self.task_id}.html"
+            report = ReportStep().render(self.label, summary)
+            self.artifacts.write_text(artifact_key, report)
+
+            if self.repository is not None:
+                self.repository.save(
+                    self.run_id,
+                    self.task_id,
+                    self.label,
+                    summary,
+                )
+
+            result = TaskResult(
+                task_id=self.task_id,
+                label=self.label,
+                item_count=len(values),
+                total=int(summary["total"]),
+                artifact_key=artifact_key,
+            )
+            self.logger.info("Task completed; artifact=%s", artifact_key)
+            return TaskOutcome(
+                task_id=self.task_id,
+                label=self.label,
+                success=True,
+                result=result,
+            )
+        except Exception as exc:
+            self.logger.exception("Task failed")
+            return TaskOutcome(
+                task_id=self.task_id,
+                label=self.label,
+                success=False,
+                error=str(exc),
+            )
+
+
+class AnalyzeTaskFactory:
+    def __init__(
+        self,
+        *,
+        compute: ComputeExecutor,
+        artifacts: ArtifactStore,
+        repository: TaskResultRepository | None,
+        logging_provider: TaskLoggerProvider,
+        chunk_size: int,
+        max_inflight: int,
+    ) -> None:
+        self.compute = compute
+        self.artifacts = artifacts
+        self.repository = repository
+        self.logging_provider = logging_provider
+        self.chunk_size = chunk_size
+        self.max_inflight = max_inflight
+
+    def create(self, spec: TaskSpec, run_id: str) -> AnalyzeTask:
+        task_id = uuid.uuid4().hex[:12]
+        return AnalyzeTask(
+            spec=spec,
+            run_id=run_id,
+            task_id=task_id,
+            compute=self.compute,
+            artifacts=self.artifacts,
+            repository=self.repository,
+            logger=self.logging_provider.task_logger(
+                run_id,
+                task_id,
+                spec.label,
+            ),
+            chunk_size=self.chunk_size,
+            max_inflight=self.max_inflight,
+        )

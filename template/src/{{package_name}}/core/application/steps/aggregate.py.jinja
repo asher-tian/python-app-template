@@ -1,0 +1,19 @@
+"""Example aggregation step."""
+
+from {{ package_name }}.core.models import ComputeChunkResult, JsonObject
+
+
+class AggregateStep:
+    def execute(
+        self,
+        *,
+        item_count: int,
+        chunks: list[ComputeChunkResult],
+        compute_enabled: bool,
+    ) -> JsonObject:
+        return {
+            "item_count": item_count,
+            "total": (sum(chunk.total for chunk in chunks) if compute_enabled else 0),
+            "compute_enabled": compute_enabled,
+            "chunk_count": len(chunks),
+        }

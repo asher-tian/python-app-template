@@ -1,0 +1,19 @@
+"""Compute capability required by CPU-intensive application steps."""
+
+from collections.abc import Callable
+from concurrent.futures import Future
+from typing import Protocol, TypeVar
+
+T = TypeVar("T")
+
+
+class ComputeExecutor(Protocol):
+    def submit(
+        self,
+        function: Callable[..., T],
+        /,
+        *args: object,
+        **kwargs: object,
+    ) -> Future[T]:
+        """Submit one serializable job to the configured compute provider."""
+        ...

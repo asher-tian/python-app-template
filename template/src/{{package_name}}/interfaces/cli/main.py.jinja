@@ -1,0 +1,54 @@
+"""CLI entry point and composition."""
+
+import logging
+import uuid
+
+from {{ package_name }}.interfaces.cli.commands.analyze import AnalyzeCommand
+from {{ package_name }}.interfaces.cli.parser import build_parser
+from {{ package_name }}.runtime.bootstrap import create_runtime
+from {{ package_name }}.runtime.config import load_config
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(message)s",
+    )
+    logger = logging.getLogger("{{ package_name }}.cli")
+
+    if args.command != "analyze":
+        logger.error("Unsupported command: %s", args.command)
+        return 2
+
+    try:
+        config = load_config(args.config, args.cpu)
+        run_id = uuid.uuid4().hex[:12]
+        request = AnalyzeCommand().build_request(args.config, run_id)
+
+        if args.dry_run:
+            logger.info(
+                "Dry run: tasks=%d task_workers=%d compute_workers=%d",
+                len(request.tasks),
+                config.max_concurrent_tasks,
+                config.compute_workers,
+            )
+            return 0
+
+        runtime = create_runtime(config, run_id)
+        run_logger = runtime.logging.run_logger()
+        try:
+            outcomes = runtime.application.analyze(request)
+            failed = [outcome for outcome in outcomes if not outcome.success]
+            run_logger.info(
+                "Run finished: total=%d succeeded=%d failed=%d",
+                len(outcomes),
+                len(outcomes) - len(failed),
+                len(failed),
+            )
+            return 1 if failed else 0
+        finally:
+            runtime.close()
+    except Exception:
+        logger.exception("Command failed")
+        return 2

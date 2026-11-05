@@ -1,0 +1,13 @@
+"""Logging capability required by application Tasks."""
+
+import logging
+from typing import Protocol
+
+
+class TaskLoggerProvider(Protocol):
+    def task_logger(
+        self,
+        run_id: str,
+        task_id: str,
+        label: str,
+    ) -> logging.LoggerAdapter: ...

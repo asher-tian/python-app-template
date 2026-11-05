@@ -1,0 +1,54 @@
+"""Framework-independent application models."""
+
+from dataclasses import dataclass
+from typing import Any
+
+
+@dataclass(frozen=True)
+class TaskSpec:
+    label: str
+    item_count: int
+    compute_enabled: bool = True
+
+
+@dataclass(frozen=True)
+class AnalyzeRequest:
+    run_id: str
+    tasks: tuple[TaskSpec, ...]
+
+
+@dataclass(frozen=True)
+class ComputeChunkInput:
+    run_id: str
+    task_id: str
+    task_label: str
+    chunk_index: int
+    values: tuple[int, ...]
+
+
+@dataclass(frozen=True)
+class ComputeChunkResult:
+    chunk_index: int
+    item_count: int
+    total: int
+
+
+@dataclass(frozen=True)
+class TaskResult:
+    task_id: str
+    label: str
+    item_count: int
+    total: int
+    artifact_key: str
+
+
+@dataclass(frozen=True)
+class TaskOutcome:
+    task_id: str
+    label: str
+    success: bool
+    result: TaskResult | None = None
+    error: str | None = None
+
+
+JsonObject = dict[str, Any]

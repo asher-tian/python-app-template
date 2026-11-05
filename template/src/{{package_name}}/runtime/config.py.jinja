@@ -1,0 +1,81 @@
+"""Validated runtime configuration loaded from JSON."""
+
+import json
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+
+@dataclass(frozen=True)
+class RuntimeConfig:
+    workpath: Path
+    log_dir: Path
+    max_concurrent_tasks: int
+    compute_workers: int
+    max_inflight_per_task: int
+    chunk_size: int
+    sqlite_enabled: bool
+    sqlite_path: Path
+
+
+def _object(value: Any, name: str) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise ValueError(f"{name} must be a JSON object")
+    return value
+
+
+def load_config(
+    path: Path,
+    cpu_override: int | None = None,
+) -> RuntimeConfig:
+    if cpu_override is not None and cpu_override < 1:
+        raise ValueError("--cpu must be a positive integer")
+
+    raw = _object(
+        json.loads(path.read_text(encoding="utf-8")),
+        "configuration",
+    )
+    base_dir = path.resolve().parent
+
+    workpath = Path(raw.get("workpath", "./workspace"))
+    if not workpath.is_absolute():
+        workpath = base_dir / workpath
+    workpath = workpath.resolve()
+
+    execution = _object(raw.get("execution", {}), "execution")
+    cpu_budget = cpu_override if cpu_override is not None else int(execution.get("cpu_budget", 2))
+    reserve_cpu = int(execution.get("reserve_cpu", 1))
+    if cpu_budget < 1 or reserve_cpu < 0:
+        raise ValueError("cpu_budget must be positive and reserve_cpu non-negative")
+
+    max_tasks = int(execution.get("max_concurrent_tasks", 2))
+    max_inflight = int(execution.get("max_inflight_per_task", 2))
+    chunk_size = int(execution.get("chunk_size", 1000))
+    if min(max_tasks, max_inflight, chunk_size) < 1:
+        raise ValueError(
+            "max_concurrent_tasks, max_inflight_per_task and chunk_size must be positive"
+        )
+
+    database = _object(raw.get("database", {}), "database")
+    sqlite_enabled = database.get("enabled", False)
+    if not isinstance(sqlite_enabled, bool):
+        raise ValueError("database.enabled must be a boolean")
+
+    sqlite_path = Path(database.get("path", "state.sqlite3"))
+    if not sqlite_path.is_absolute():
+        sqlite_path = workpath / sqlite_path
+
+    log_dir = Path(raw.get("log_dir", "logs"))
+    if not log_dir.is_absolute():
+        log_dir = workpath / log_dir
+
+    return RuntimeConfig(
+        workpath=workpath,
+        log_dir=log_dir.resolve(),
+        max_concurrent_tasks=max_tasks,
+        compute_workers=max(1, cpu_budget - reserve_cpu),
+        max_inflight_per_task=max_inflight,
+        chunk_size=chunk_size,
+        sqlite_enabled=sqlite_enabled,
+        sqlite_path=sqlite_path.resolve(),
+    )

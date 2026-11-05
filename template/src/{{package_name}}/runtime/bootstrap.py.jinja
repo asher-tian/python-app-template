@@ -1,0 +1,84 @@
+"""Composition root: build adapters and wire the application."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from {{ package_name }}.core.application.app import Application
+from {{ package_name }}.core.application.tasks.analyze import AnalyzeTaskFactory
+from {{ package_name }}.core.application.use_cases.analyze import AnalyzeUseCase
+from {{ package_name }}.infrastructure.compute.process_pool import ProcessPoolCompute
+from {{ package_name }}.infrastructure.database.sqlite import (
+    SQLiteTaskResultRepository,
+)
+from {{ package_name }}.infrastructure.logging.setup import LoggingManager
+from {{ package_name }}.infrastructure.storage.local import LocalArtifactStore
+from {{ package_name }}.runtime.config import RuntimeConfig
+from {{ package_name }}.runtime.scheduler import ThreadTaskScheduler
+
+
+@dataclass
+class ApplicationRuntime:
+    application: Application
+    logging: LoggingManager
+    compute: ProcessPoolCompute
+    _closed: bool = False
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        try:
+            self.compute.close()
+        finally:
+            self.logging.close()
+            self._closed = True
+
+    def __enter__(self) -> ApplicationRuntime:
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback) -> None:
+        self.close()
+
+
+def create_runtime(
+    config: RuntimeConfig,
+    run_id: str,
+) -> ApplicationRuntime:
+    config.workpath.mkdir(parents=True, exist_ok=True)
+    logging_manager = LoggingManager(
+        config.log_dir,
+        command="analyze",
+        run_id=run_id,
+    )
+    compute = None
+    try:
+        compute = ProcessPoolCompute(
+            max_workers=config.compute_workers,
+            log_queue=logging_manager.queue,
+        )
+        repository = (
+            SQLiteTaskResultRepository(config.sqlite_path) if config.sqlite_enabled else None
+        )
+        artifacts = LocalArtifactStore(config.workpath)
+        scheduler = ThreadTaskScheduler(config.max_concurrent_tasks)
+        task_factory = AnalyzeTaskFactory(
+            compute=compute,
+            artifacts=artifacts,
+            repository=repository,
+            logging_provider=logging_manager,
+            chunk_size=config.chunk_size,
+            max_inflight=config.max_inflight_per_task,
+        )
+        use_case = AnalyzeUseCase(task_factory, scheduler)
+        return ApplicationRuntime(
+            application=Application(use_case),
+            logging=logging_manager,
+            compute=compute,
+        )
+    except Exception:
+        try:
+            if compute is not None:
+                compute.close()
+        finally:
+            logging_manager.close()
+        raise

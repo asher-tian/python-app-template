@@ -1,0 +1,17 @@
+from {{ package_name }}.interfaces.cli.parser import build_parser
+
+
+def test_analyze_parser_accepts_config_and_cpu():
+    args = build_parser().parse_args(["--config", "config.json", "--cpu", "4", "analyze"])
+    assert args.command == "analyze"
+    assert args.cpu == 4
+    assert args.dry_run is False
+
+
+def test_analyze_parser_supports_dry_run():
+    args = build_parser().parse_args(["analyze", "--dry-run"])
+    assert args.dry_run is True
+
+
+def test_version_parser_is_available():
+    assert build_parser().prog == "{{ project_slug }}"

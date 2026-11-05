@@ -1,0 +1,15 @@
+"""Persistence ports."""
+
+from typing import Protocol
+
+from {{ package_name }}.core.models import JsonObject
+
+
+class TaskResultRepository(Protocol):
+    def save(
+        self,
+        run_id: str,
+        task_id: str,
+        label: str,
+        summary: JsonObject,
+    ) -> None: ...

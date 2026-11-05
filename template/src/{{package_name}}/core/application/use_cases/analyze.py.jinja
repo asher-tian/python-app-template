@@ -1,0 +1,15 @@
+"""Analyze use case."""
+
+from {{ package_name }}.core.application.tasks.base import TaskFactory
+from {{ package_name }}.core.models import AnalyzeRequest, TaskOutcome
+from {{ package_name }}.core.ports.scheduler import TaskScheduler
+
+
+class AnalyzeUseCase:
+    def __init__(self, task_factory: TaskFactory, scheduler: TaskScheduler) -> None:
+        self._task_factory = task_factory
+        self._scheduler = scheduler
+
+    def execute(self, request: AnalyzeRequest) -> list[TaskOutcome]:
+        tasks = [self._task_factory.create(spec, request.run_id) for spec in request.tasks]
+        return self._scheduler.run(tasks)

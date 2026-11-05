@@ -1,0 +1,58 @@
+"""Optional SQLite result repository with short-lived connections."""
+
+import json
+import sqlite3
+from contextlib import closing
+from pathlib import Path
+
+from {{ package_name }}.core.models import JsonObject
+
+
+class SQLiteTaskResultRepository:
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        with closing(self._connect()) as connection:
+            connection.execute("PRAGMA journal_mode=WAL")
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS task_results (
+                    run_id TEXT NOT NULL,
+                    task_id TEXT NOT NULL,
+                    label TEXT NOT NULL,
+                    summary_json TEXT NOT NULL,
+                    PRIMARY KEY (run_id, task_id)
+                )
+                """
+            )
+
+    def _connect(self) -> sqlite3.Connection:
+        connection = sqlite3.connect(
+            self.path,
+            timeout=30,
+        )
+        connection.execute("PRAGMA busy_timeout=30000")
+        return connection
+
+    def save(
+        self,
+        run_id: str,
+        task_id: str,
+        label: str,
+        summary: JsonObject,
+    ) -> None:
+        with closing(self._connect()) as connection:
+            with connection:
+                connection.execute(
+                    """
+                    INSERT OR REPLACE INTO task_results
+                    (run_id, task_id, label, summary_json)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (
+                        run_id,
+                        task_id,
+                        label,
+                        json.dumps(summary, ensure_ascii=False),
+                    ),
+                )

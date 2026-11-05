@@ -1,0 +1,47 @@
+name: Validate Copier Template
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  generate-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install Copier
+        run: python -m pip install --disable-pip-version-check "copier>=9,<10"
+
+      - name: Generate project from template
+        run: >-
+          copier copy --defaults
+          --data "project_name=Template Validation"
+          --data "project_slug=template-validation"
+          --data "package_name=template_validation"
+          --data "python_version=3.13"
+          . ./generated
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Install project dependencies
+        working-directory: generated
+        run: uv sync --all-groups
+
+      - name: Lint
+        working-directory: generated
+        run: uv run ruff check .
+
+      - name: Check formatting
+        working-directory: generated
+        run: uv run ruff format --check .
+
+      - name: Test
+        working-directory: generated
+        run: uv run pytest

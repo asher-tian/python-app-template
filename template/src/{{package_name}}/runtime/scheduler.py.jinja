@@ -1,0 +1,39 @@
+"""Thread-based Task scheduler. CPU work uses the shared Compute provider."""
+
+from collections.abc import Sequence
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+from {{ package_name }}.core.application.tasks.base import Task
+from {{ package_name }}.core.models import TaskOutcome
+
+
+class ThreadTaskScheduler:
+    def __init__(self, max_workers: int) -> None:
+        if max_workers < 1:
+            raise ValueError("max_workers must be positive")
+        self.max_workers = max_workers
+
+    def run(self, tasks: Sequence[Task]) -> list[TaskOutcome]:
+        if not tasks:
+            return []
+
+        outcomes: list[TaskOutcome | None] = [None] * len(tasks)
+        with ThreadPoolExecutor(
+            max_workers=self.max_workers,
+            thread_name_prefix="task",
+        ) as executor:
+            future_to_index = {executor.submit(task.run): index for index, task in enumerate(tasks)}
+            for future in as_completed(future_to_index):
+                index = future_to_index[future]
+                task = tasks[index]
+                try:
+                    outcomes[index] = future.result()
+                except Exception as exc:
+                    outcomes[index] = TaskOutcome(
+                        task_id=task.task_id,
+                        label=task.label,
+                        success=False,
+                        error=str(exc),
+                    )
+
+        return [outcome for outcome in outcomes if outcome is not None]

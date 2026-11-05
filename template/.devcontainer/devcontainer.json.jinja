@@ -1,0 +1,21 @@
+{
+  "name": "{{ project_name }} (Python {{ python_version }})",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "args": {"PYTHON_VERSION": "{{ python_version }}"}
+  },
+  "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
+  "features": {"ghcr.io/devcontainers/features/uv:1": {}},
+  "customizations": {
+    "vscode": {
+      "extensions": ["ms-python.python", "charliermarsh.ruff"],
+      "settings": {
+        "python.defaultInterpreterPath": ".venv/bin/python",
+        "editor.formatOnSave": true,
+        "[python]": {"editor.defaultFormatter": "charliermarsh.ruff"}
+      }
+    }
+  },
+  "postCreateCommand": "uv sync --all-groups",
+  "remoteUser": "vscode"
+}

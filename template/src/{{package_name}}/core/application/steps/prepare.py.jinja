@@ -1,0 +1,17 @@
+"""Example data preparation step."""
+
+import logging
+
+from {{ package_name }}.core.models import TaskSpec
+
+
+class PrepareStep:
+    def execute(
+        self,
+        spec: TaskSpec,
+        logger: logging.LoggerAdapter,
+    ) -> tuple[int, ...]:
+        if spec.item_count < 0:
+            raise ValueError("item_count cannot be negative")
+        logger.info("Preparing input data; item_count=%d", spec.item_count)
+        return tuple(range(spec.item_count))

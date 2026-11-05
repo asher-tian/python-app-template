@@ -1,0 +1,51 @@
+"""Translate CLI configuration into an application request."""
+
+import json
+from pathlib import Path
+
+from {{ package_name }}.core.models import AnalyzeRequest, TaskSpec
+
+
+class AnalyzeCommand:
+    def build_request(
+        self,
+        config_path: Path,
+        run_id: str,
+    ) -> AnalyzeRequest:
+        raw = json.loads(config_path.read_text(encoding="utf-8"))
+        if not isinstance(raw, dict):
+            raise ValueError("Configuration root must be a JSON object")
+
+        raw_tasks = raw.get("tasks", [])
+        if not isinstance(raw_tasks, list) or not raw_tasks:
+            raise ValueError("Configuration must define at least one task")
+
+        tasks = []
+        for index, item in enumerate(raw_tasks):
+            if not isinstance(item, dict):
+                raise ValueError(f"tasks[{index}] must be a JSON object")
+
+            label = item.get("label")
+            if not isinstance(label, str) or not label.strip():
+                raise ValueError(f"tasks[{index}].label must be a non-empty string")
+
+            item_count = item.get("item_count", 1000)
+            if isinstance(item_count, bool) or not isinstance(item_count, int) or item_count < 0:
+                raise ValueError(f"tasks[{index}].item_count must be a non-negative integer")
+
+            compute_enabled = item.get("compute_enabled", True)
+            if not isinstance(compute_enabled, bool):
+                raise ValueError(f"tasks[{index}].compute_enabled must be a boolean")
+
+            tasks.append(
+                TaskSpec(
+                    label=label.strip(),
+                    item_count=item_count,
+                    compute_enabled=compute_enabled,
+                )
+            )
+
+        return AnalyzeRequest(
+            run_id=run_id,
+            tasks=tuple(tasks),
+        )

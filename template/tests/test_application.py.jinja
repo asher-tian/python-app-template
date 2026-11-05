@@ -1,0 +1,43 @@
+import logging
+
+from {{ package_name }}.core.application.tasks.analyze import AnalyzeTask
+from {{ package_name }}.core.models import TaskSpec
+from {{ package_name }}.infrastructure.compute.process_pool import InlineCompute
+from {{ package_name }}.infrastructure.database.sqlite import (
+    SQLiteTaskResultRepository,
+)
+from {{ package_name }}.infrastructure.storage.local import LocalArtifactStore
+
+
+def test_analyze_task_runs_steps_and_persists_outputs(tmp_path):
+    database = SQLiteTaskResultRepository(tmp_path / "state.sqlite3")
+    task = AnalyzeTask(
+        spec=TaskSpec(label="sample", item_count=5, compute_enabled=True),
+        run_id="run-1",
+        task_id="task-1",
+        compute=InlineCompute(),
+        artifacts=LocalArtifactStore(tmp_path),
+        repository=database,
+        logger=logging.LoggerAdapter(
+            logging.getLogger("test.analyze"),
+            {
+                "run_id": "run-1",
+                "scope": "task",
+                "task_id": "task-1",
+                "task_label": "sample",
+                "step": "-",
+                "chunk_id": "-",
+                "source": "test",
+            },
+        ),
+        chunk_size=2,
+        max_inflight=2,
+    )
+
+    outcome = task.run()
+
+    assert outcome.success is True
+    assert outcome.result is not None
+    assert outcome.result.total == 30
+    report = tmp_path / outcome.result.artifact_key
+    assert "Total: 30" in report.read_text(encoding="utf-8")
