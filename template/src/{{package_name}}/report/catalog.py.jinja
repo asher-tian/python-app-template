@@ -1,17 +1,12 @@
-"""Discover report resources from explicit Business / Group metadata."""
+"""Build report navigation by aggregating per-run records."""
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
-from {{ package_name }}.report.models import (
-    BusinessManifest,
-    GroupManifest,
-    GroupReference,
-    RunRecord,
-)
-from {{ package_name }}.store.files import read_json, resolve_relative
+from {{ package_name }}.report.models import GroupRunResult
+from {{ package_name }}.store.files import read_json
+from {{ package_name }}.store.run_record import RunRecord
 from {{ package_name }}.store.workspace import Workspace
 
 
@@ -19,80 +14,161 @@ class ReportCatalog:
     def __init__(self, workspace: Workspace) -> None:
         self.workspace = workspace
 
-    def list_businesses(self) -> list[BusinessManifest]:
-        businesses: list[BusinessManifest] = []
-        if not self.workspace.businesses_dir.exists():
-            return businesses
-        for directory in sorted(self.workspace.businesses_dir.iterdir()):
-            manifest_path = directory / "business.json"
-            if directory.is_dir() and manifest_path.is_file():
-                business = BusinessManifest.model_validate(
-                    json.loads(manifest_path.read_text(encoding="utf-8"))
-                )
-                if business.business_id != directory.name:
-                    raise ValueError("Business ID does not match its workspace directory")
-                businesses.append(business)
-        return businesses
+    def _records(self) -> list[RunRecord]:
+        root = self.workspace.run_records_root
+        if not root.exists():
+            return []
 
-    def business(self, business_id: str) -> BusinessManifest:
-        root = self.workspace.business_dir(business_id)
-        data = read_json(root, "business.json")
-        business = BusinessManifest.model_validate(data)
-        if business.business_id != business_id:
-            raise ValueError("Business ID does not match its workspace directory")
-        return business
+        records: list[RunRecord] = []
+        for run_file in sorted(root.glob("*/run.json")):
+            relative_path = run_file.relative_to(self.workspace.root).as_posix()
+            record = RunRecord.model_validate(read_json(self.workspace.root, relative_path))
+            if record.run_id != run_file.parent.name:
+                raise ValueError("Run ID does not match its run directory")
+            records.append(record)
+        return sorted(records, key=lambda item: (item.started_at, item.run_id))
+
+    @staticmethod
+    def _group_result(record: RunRecord, group_id: str) -> GroupRunResult | None:
+        for item in record.groups:
+            group = GroupRunResult.model_validate(item)
+            if group.group_id == group_id:
+                return group
+        return None
+
+    def list_businesses(self) -> list[dict]:
+        businesses: dict[str, dict] = {}
+        for record in self._records():
+            if record.business_id is None:
+                continue
+            business = businesses.setdefault(
+                record.business_id,
+                {
+                    "business_id": record.business_id,
+                    "name": record.business_name or record.business_id,
+                    "description": record.business_description,
+                    "groups": {},
+                },
+            )
+            business["name"] = record.business_name or record.business_id
+            business["description"] = record.business_description
+
+            for raw_group in record.groups:
+                group = GroupRunResult.model_validate(raw_group)
+                entry = business["groups"].setdefault(
+                    group.group_id,
+                    {
+                        "group_id": group.group_id,
+                        "label": group.label,
+                        "latest_run_id": None,
+                        "latest_status": group.status,
+                        "runs_count": 0,
+                    },
+                )
+                entry["label"] = group.label
+                entry["latest_status"] = group.status
+                entry["runs_count"] += 1
+                if group.status == "success" and group.report_entry:
+                    entry["latest_run_id"] = record.run_id
+
+        result = []
+        for business in businesses.values():
+            business["groups"] = sorted(
+                business["groups"].values(),
+                key=lambda item: (item["label"].casefold(), item["group_id"]),
+            )
+            result.append(business)
+        return sorted(result, key=lambda item: (item["name"].casefold(), item["business_id"]))
+
+    def list_groups(self, business_id: str) -> list[dict]:
+        business = next(
+            (item for item in self.list_businesses() if item["business_id"] == business_id),
+            None,
+        )
+        if business is None:
+            raise FileNotFoundError(f"Business {business_id!r} has no Run records")
+        return business["groups"]
+
+    def _matching_group_runs(self, business_id: str, group_id: str):
+        matches = []
+        for record in self._records():
+            if record.business_id != business_id:
+                continue
+            group = self._group_result(record, group_id)
+            if group is not None:
+                matches.append((record, group))
+        return matches
+
+    def latest_group_run(self, business_id: str, group_id: str):
+        matches = self._matching_group_runs(business_id, group_id)
+        for record, group in reversed(matches):
+            if group.status == "success" and group.report_entry:
+                return record, group
+        raise FileNotFoundError(
+            f"Group {business_id}/{group_id} has no successful report"
+        )
+
+    def group_run(self, business_id: str, group_id: str, run_id: str):
+        for record, group in self._matching_group_runs(business_id, group_id):
+            if record.run_id == run_id:
+                if group.status != "success" or not group.report_entry:
+                    raise FileNotFoundError(
+                        f"Run {run_id!r} has no successful report for this Group"
+                    )
+                return record, group
+        raise FileNotFoundError(f"Run {run_id!r} was not found for {business_id}/{group_id}")
 
     def group_context(
         self,
         business_id: str,
         group_id: str,
-    ) -> tuple[Path, BusinessManifest, GroupReference, GroupManifest]:
-        root = self.workspace.business_dir(business_id)
-        business = self.business(business_id)
-        reference = next(
-            (item for item in business.groups if item.group_id == group_id),
-            None,
-        )
-        if reference is None:
+        run_id: str | None = None,
+    ) -> dict:
+        matches = self._matching_group_runs(business_id, group_id)
+        if not matches:
             raise FileNotFoundError(f"Unknown Group {business_id}/{group_id}")
 
-        group_data = read_json(root, reference.manifest)
-        group = GroupManifest.model_validate(group_data)
-        if group.business_id != business_id or group.group_id != group_id:
-            raise ValueError("Group Manifest identity does not match its Business reference")
-        return root, business, reference, group
-
-    @staticmethod
-    def latest_run(group: GroupManifest) -> RunRecord:
-        if group.latest_run_id is None:
-            raise FileNotFoundError("This Group has no successful report yet")
-        run = next((item for item in group.runs if item.run_id == group.latest_run_id), None)
-        if run is None or run.status != "success":
-            raise ValueError("Group latest_run_id does not reference a successful Run")
-        return run
-
-    def run(self, group: GroupManifest, run_id: str | None = None) -> RunRecord:
-        if run_id is None:
-            return self.latest_run(group)
-        run = next((item for item in group.runs if item.run_id == run_id), None)
-        if run is None or run.status != "success":
-            raise FileNotFoundError(f"Successful Run {run_id!r} was not found")
-        return run
-
-    def report_path(
-        self,
-        business_id: str,
-        group_id: str,
-        run_id: str | None = None,
-    ) -> Path:
-        root, _, _, group = self.group_context(business_id, group_id)
-        run = self.run(group, run_id)
-        if run.report is None:
-            raise FileNotFoundError("The selected Run has no report entry")
-        path = resolve_relative(root, run.report.entry)
-        if not path.is_file():
-            raise FileNotFoundError("The declared report entry does not exist")
-        return path
+        selected_record, selected_group = (
+            self.group_run(business_id, group_id, run_id)
+            if run_id
+            else self.latest_group_run(business_id, group_id)
+        )
+        _, latest_attempt_group = matches[-1]
+        latest_success_record, _ = self.latest_group_run(business_id, group_id)
+        history = [
+            {
+                "run_id": record.run_id,
+                "status": group.status,
+                "started_at": record.started_at,
+                "finished_at": record.finished_at,
+                "summary": group.summary,
+            }
+            for record, group in reversed(matches)
+        ]
+        return {
+            "business": {
+                "business_id": selected_record.business_id,
+                "name": selected_record.business_name or selected_record.business_id,
+                "description": selected_record.business_description,
+            },
+            "group": {
+                "group_id": group_id,
+                "label": latest_attempt_group.label,
+                "latest_run_id": latest_success_record.run_id,
+                "latest_status": latest_attempt_group.status,
+                "runs": history,
+            },
+            "latest_run": {
+                "run_id": selected_record.run_id,
+                "started_at": selected_record.started_at,
+                "finished_at": selected_record.finished_at,
+                "status": selected_group.status,
+                "summary": selected_group.summary,
+                "datasets": [
+                    item.model_dump(mode="json") for item in selected_group.datasets
+                ],
+            },
+        }
 
     def dataset(
         self,
@@ -101,11 +177,32 @@ class ReportCatalog:
         dataset_id: str,
         run_id: str | None = None,
     ):
-        root, _, _, group = self.group_context(business_id, group_id)
-        run = self.run(group, run_id)
-        reference = next((item for item in run.datasets if item.id == dataset_id), None)
+        _, group = (
+            self.group_run(business_id, group_id, run_id)
+            if run_id
+            else self.latest_group_run(business_id, group_id)
+        )
+        reference = next((item for item in group.datasets if item.id == dataset_id), None)
         if reference is None:
             raise FileNotFoundError(f"Dataset {dataset_id!r} was not declared by the Run")
         if reference.format != "json":
             raise ValueError(f"Unsupported Dataset format: {reference.format}")
-        return read_json(root, reference.path)
+        return read_json(self.workspace.root, reference.path)
+
+    def report_path(
+        self,
+        business_id: str,
+        group_id: str,
+        run_id: str | None = None,
+    ) -> Path:
+        _, group = (
+            self.group_run(business_id, group_id, run_id)
+            if run_id
+            else self.latest_group_run(business_id, group_id)
+        )
+        if group.report_entry is None:
+            raise FileNotFoundError("The selected Run has no report entry")
+        path = self.workspace.resolve(group.report_entry)
+        if not path.is_file():
+            raise FileNotFoundError("The declared report entry does not exist")
+        return path

@@ -1,32 +1,8 @@
-"""Public metadata contract used for Business and Group discovery."""
+"""In-memory report output contracts; these are not persisted as manifests."""
 
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
-
-
-class GroupReference(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    group_id: str
-    label: str
-    manifest: str
-
-
-class BusinessManifest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    schema_version: Literal[1] = 1
-    business_id: str
-    name: str
-    description: str = ""
-    groups: list[GroupReference] = Field(default_factory=list)
-
-
-class ReportReference(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    entry: str
 
 
 class DatasetReference(BaseModel):
@@ -38,24 +14,13 @@ class DatasetReference(BaseModel):
     format: str = "json"
 
 
-class RunRecord(BaseModel):
+class GroupRunResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    run_id: str
-    created_at: str
+    group_id: str
+    label: str
     status: Literal["success", "failed"]
-    report: ReportReference | None = None
+    report_entry: str | None = None
     datasets: list[DatasetReference] = Field(default_factory=list)
     summary: dict[str, object] = Field(default_factory=dict)
     error: str | None = None
-
-
-class GroupManifest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    schema_version: Literal[1] = 1
-    business_id: str
-    group_id: str
-    label: str
-    latest_run_id: str | None = None
-    runs: list[RunRecord] = Field(default_factory=list)

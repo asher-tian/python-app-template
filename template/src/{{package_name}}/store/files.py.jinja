@@ -14,6 +14,7 @@ def resolve_relative(root: Path, relative_path: str) -> Path:
     relative = PurePosixPath(relative_path)
     if (
         relative.is_absolute()
+        or not relative.parts
         or ".." in relative.parts
         or "\\" in relative_path
         or ":" in relative.parts[0]

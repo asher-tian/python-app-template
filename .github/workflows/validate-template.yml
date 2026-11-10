@@ -60,7 +60,7 @@ jobs:
           uv run template_validation analysis --config analysis.cfg
           uv run template_validation comparison --config comparison.cfg
 
-      - name: Verify Workspace and shared Group Labels
+      - name: Verify per-Run records and custom business paths
         working-directory: generated
         run: |
           python - <<'PY'
@@ -68,13 +68,16 @@ jobs:
           from pathlib import Path
 
           root = Path("workspace")
-          analysis = json.loads((root / "businesses/analysis/business.json").read_text())
-          comparison = json.loads((root / "businesses/comparison/business.json").read_text())
-          assert {item["group_id"] for item in analysis["groups"]} == {"alpha", "beta", "gamma"}
-          assert {item["group_id"] for item in comparison["groups"]} == {"alpha", "beta"}
-          assert (root / ".app/workspace.json").is_file()
-          assert (root / "shared").is_dir()
-          assert len(list((root / ".app/runs").glob("*/manifest.json"))) == 2
+          run_files = list((root / ".app" / "runs").glob("*/run.json"))
+          assert len(run_files) == 2
+          records = [json.loads(path.read_text()) for path in run_files]
+          assert {record["business_id"] for record in records} == {"analysis", "comparison"}
+          assert all(record["status"] == "success" for record in records)
+          assert not (root / "workspace.json").exists()
+          assert not (root / "businesses").exists()
+          assert not (root / "shared").exists()
+          assert (root / "analysis" / "reports").is_dir()
+          assert (root / "comparison" / "reports").is_dir()
           PY
 
       - name: HTTP CLI smoke test

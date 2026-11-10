@@ -1,0 +1,107 @@
+from {{ package_name }}.report.catalog import ReportCatalog
+from {{ package_name }}.report.models import DatasetReference, GroupRunResult
+from {{ package_name }}.store.run_record import RunRecordStore
+from {{ package_name }}.store.workspace import Workspace
+
+
+def _write_run(
+    workspace: Workspace,
+    *,
+    run_id: str,
+    business_id: str,
+    business_name: str,
+    group_id: str,
+    label: str,
+    status: str = "success",
+) -> None:
+    run = RunRecordStore(
+        workspace,
+        run_id=run_id,
+        command=business_id,
+        business_id=business_id,
+        business_name=business_name,
+        config_source=f"{business_id}.cfg",
+        effective_config={"business": {"paths": {"reports": f"{business_id}/reports"}}},
+    )
+    report_entry = f"{business_id}/reports/{group_id}/{run_id}/index.html"
+    dataset_path = f"{business_id}/data/{group_id}/{run_id}.json"
+    if status == "success":
+        workspace.resolve(report_entry).parent.mkdir(parents=True, exist_ok=True)
+        workspace.resolve(report_entry).write_text("<html></html>", encoding="utf-8")
+        workspace.resolve(dataset_path).parent.mkdir(parents=True, exist_ok=True)
+        workspace.resolve(dataset_path).write_text('{"value": 7}', encoding="utf-8")
+
+    result = GroupRunResult(
+        group_id=group_id,
+        label=label,
+        status=status,
+        report_entry=report_entry if status == "success" else None,
+        datasets=[
+            DatasetReference(
+                id="summary",
+                title="Summary",
+                path=dataset_path,
+            )
+        ] if status == "success" else [],
+        summary={"value": 7} if status == "success" else {},
+        error="sample failure" if status == "failed" else None,
+    )
+    run.finish([result.model_dump(mode="json")], status)
+
+
+def test_report_catalog_discovers_businesses_and_groups_from_run_records_only(tmp_path):
+    workspace = Workspace(tmp_path / "work", run_records_dir="execution-history")
+    workspace.initialize()
+    _write_run(
+        workspace,
+        run_id="run-1",
+        business_id="analysis",
+        business_name="Analysis",
+        group_id="alpha",
+        label="Alpha",
+    )
+    _write_run(
+        workspace,
+        run_id="run-2",
+        business_id="comparison",
+        business_name="Comparison",
+        group_id="alpha",
+        label="Alpha",
+    )
+
+    catalog = ReportCatalog(workspace)
+    businesses = catalog.list_businesses()
+    assert [item["business_id"] for item in businesses] == ["analysis", "comparison"]
+    assert catalog.list_groups("analysis")[0]["group_id"] == "alpha"
+    assert catalog.list_groups("comparison")[0]["group_id"] == "alpha"
+    assert not (workspace.root / "businesses").exists()
+    assert not (workspace.root / "business.json").exists()
+
+
+def test_failed_run_does_not_replace_latest_successful_group_run(tmp_path):
+    workspace = Workspace(tmp_path / "work")
+    workspace.initialize()
+    _write_run(
+        workspace,
+        run_id="run-1",
+        business_id="analysis",
+        business_name="Analysis",
+        group_id="alpha",
+        label="Alpha",
+    )
+    _write_run(
+        workspace,
+        run_id="run-2",
+        business_id="analysis",
+        business_name="Analysis",
+        group_id="alpha",
+        label="Alpha",
+        status="failed",
+    )
+
+    catalog = ReportCatalog(workspace)
+    detail = catalog.group_context("analysis", "alpha")
+    assert detail["latest_run"]["run_id"] == "run-1"
+    assert detail["group"]["latest_status"] == "failed"
+    assert len(detail["group"]["runs"]) == 2
+    assert catalog.dataset("analysis", "alpha", "summary") == {"value": 7}

@@ -6,65 +6,54 @@
 
 需要 Python {{ python_version }} 和 uv。
 
-```bash
-uv sync --all-groups
-
-# 运行两个示例业务
-uv run {{ package_name }} analysis --config analysis.cfg
-uv run {{ package_name }} comparison --config comparison.cfg
-
-# 启动本地报告中心
-uv run {{ package_name }} http --config app.cfg
-```
+    uv sync --all-groups
+    uv run {{ package_name }} analysis --config analysis.cfg
+    uv run {{ package_name }} comparison --config comparison.cfg
+    uv run {{ package_name }} http --config app.cfg
 
 浏览器访问 http://127.0.0.1:8000。HTTP 服务默认只监听本机地址。
 
 ## 架构
 
-- `cli/`：命令入口、配置加载和执行编排。
-- `core/`：业务模型和 workflow；不依赖外部接口或文件布局。
-- `report/`：业务专属报告生成、元数据契约和共享前端。
-- `store/`：Workspace、路径安全、文件读写和 Run Manifest。
-- `http/`：可选 FastAPI 本地服务，提供报告页面和 API。
+- cli：命令入口、配置加载和执行编排。
+- core：业务模型和 workflow；不依赖外部接口或文件布局。
+- report：业务专属报告生成、报告数据契约和共享前端。
+- store：Workspace 路径访问、Run 记录和通用文件操作。
+- http：可选 FastAPI 本地服务，提供报告页面和 API。
 
 不预建 Runtime、Bootstrap、Ports、Adapters、通用 Task 框架或 Worker。多 Group 并发由 CLI 使用 ThreadPoolExecutor；进程池按实际业务需求引入。
 
-## Workspace 结构
+## Workspace / workpath
 
-`app.cfg` 中的 `workpath` 是应用工作空间。模板只创建三个公共入口：
+app.cfg 中的 workpath 是应用工作目录。Workspace 本身不创建固定业务目录，也不写入 workspace.json。
 
-```text
-workpath/
-├── .app/          # workspace.json、runs/<run_id>/manifest.json 和日志
-├── shared/        # 跨业务共享数据；内部结构自由
-└── businesses/    # 每个业务独立的命名空间
-    ├── analysis/
-    │   └── business.json
-    └── comparison/
-        └── business.json
-```
+全局配置中的 workspace.run_records_dir 指定唯一的通用 Run 记录目录，默认是 .app/runs。每次 CLI 或 HTTP 任务在该目录下创建独立 Run 目录：
 
-每个 Business 根目录必须提供 `business.json`。它声明 Business 信息、平级 Groups 以及各 Group Manifest 的相对路径。Group Manifest 声明运行历史、latest successful Run、报告入口和 Dataset。
+    workpath/
+    └── .app/
+        └── runs/
+            └── <run_id>/
+                ├── run.json
+                └── logs/
+                    ├── run.jsonl
+                    └── groups/
 
-业务内部目录由业务自己规划。公共 Store 和 HTTP 不假设存在 `data/`、`reports/`、`cache/` 等目录。所有对外产物通过 Manifest 声明，路径必须是相对于 Business 根目录的安全 POSIX 相对路径。
+run.json 保存当次命令、Business 信息、有效配置、配置来源、Python / OS 环境、Group 执行结果、开始结束时间和异常摘要。敏感配置字段会递归脱敏。
 
-Business ID、Group ID 用于稳定标识；Label 只用于展示。不同 Business 可以有相同 Label。Run ID 是一次执行的唯一标识，不是报告导航层级。
+Business / Group 不再有 business.json 或独立 Group Manifest。latest successful Run 由 Report 从各 Run 的 run.json 聚合计算，不维护共享索引文件。
 
-## 配置
+## 业务路径
 
-- `app.cfg`：全局 workpath 和 HTTP 配置。
-- `analysis.cfg`、`comparison.cfg`：业务参数和 Group 列表。
+每个业务配置通过 paths 声明自己的目录。例如 Analysis 使用 datasets、reports、derived；Comparison 使用 exports、reports。路径均相对于 workpath，允许业务自行组织目录，不要求统一目录名称。
 
-业务命令默认读取 `app.cfg`，可通过 `--app-config` 和 `--workpath` 覆盖。HTTP 命令使用 `--config` 或 `-cfg` 指定全局配置。
+通用 Workspace / Store 不知道这些路径的业务含义，只负责安全解析和文件读写。shared 等公共数据目录也由实际业务需要自行声明和创建，不由模板强制创建。
 
 ## 二次分析
 
-报告前端可以执行筛选、排序和轻量统计。需要 Python 业务逻辑的二次分析通过 HTTP API 调用 Core。示例 Analysis 业务提供阈值二次分析，并将结果作为新的 Run 保存；失败运行不会覆盖 latest successful Run。
+报告前端可以执行筛选、排序和轻量统计。需要 Python 业务逻辑的二次分析通过 HTTP API 调用 Core。示例 Analysis 业务提供阈值二次分析；每次二次分析都会创建新的 Run 记录，不修改已有 Run。
 
 ## 检查
 
-```bash
-uv run ruff check .
-uv run ruff format --check .
-uv run pytest
-```
+    uv run ruff check .
+    uv run ruff format --check .
+    uv run pytest

@@ -1,25 +1,49 @@
 import pytest
 
-from {{ package_name }}.cli.config import group_id_for, load_app_config, load_business_config
+from {{ package_name }}.cli.config import (
+    group_id_for,
+    load_app_config,
+    load_business_config,
+)
 
 
-def test_app_config_resolves_workpath_relative_to_config_file(tmp_path):
+def test_app_config_resolves_workpath_and_custom_run_records_path(tmp_path):
     config_path = tmp_path / "app.cfg"
-    config_path.write_text('[app]\nworkpath = "./workspace"\n', encoding="utf-8")
+    config_path.write_text(
+        '[app]\nworkpath = "./workspace"\n'
+        '[workspace]\nrun_records_dir = "runs/history"\n',
+        encoding="utf-8",
+    )
     config = load_app_config(config_path)
     assert config.app.workpath == (tmp_path / "workspace").resolve()
+    assert config.workspace.run_records_dir == "runs/history"
 
 
-def test_business_config_derives_safe_group_ids_and_rejects_collisions(tmp_path):
+def test_business_config_loads_business_owned_paths_and_derives_group_ids(tmp_path):
     config_path = tmp_path / "analysis.cfg"
     config_path.write_text(
         '[business]\nid = "analysis"\nname = "Analysis"\n'
+        '[paths]\nreports = "my-analysis/output/reports"\n'
+        'datasets = "my-analysis/data"\n'
         '[[groups]]\nlabel = "Alpha Group"\n'
         '[[groups]]\nlabel = "Beta"\n',
         encoding="utf-8",
     )
     config = load_business_config(config_path)
     assert group_id_for(config.groups[0]) == "alpha-group"
+    assert config.paths["reports"] == "my-analysis/output/reports"
+
+
+def test_business_config_rejects_duplicate_group_ids_and_unsafe_paths(tmp_path):
+    config_path = tmp_path / "analysis.cfg"
+    config_path.write_text(
+        '[business]\nid = "analysis"\nname = "Analysis"\n'
+        '[paths]\nreports = "../outside"\n'
+        '[[groups]]\nlabel = "Alpha"\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="safe POSIX relative path"):
+        load_business_config(config_path)
 
     config_path.write_text(
         '[business]\nid = "analysis"\nname = "Analysis"\n'

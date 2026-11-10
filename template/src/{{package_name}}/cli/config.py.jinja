@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 import tomllib
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
@@ -12,10 +12,30 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 _ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 
 
+def _validate_relative_path(value: str, field_name: str) -> str:
+    path = PurePosixPath(value)
+    if (
+        not value
+        or path.is_absolute()
+        or not path.parts
+        or ".." in path.parts
+        or "\\" in value
+        or ":" in path.parts[0]
+    ):
+        raise ValueError(f"{field_name} must be a safe POSIX relative path")
+    return value
+
+
 class AppSection(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     workpath: Path = Path("./workspace")
+
+
+class WorkspaceSection(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    run_records_dir: str = ".app/runs"
 
 
 class HttpSection(BaseModel):
@@ -30,6 +50,7 @@ class AppConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     app: AppSection = Field(default_factory=AppSection)
+    workspace: WorkspaceSection = Field(default_factory=WorkspaceSection)
     http: HttpSection = Field(default_factory=HttpSection)
 
 
@@ -54,6 +75,7 @@ class BusinessConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     business: BusinessSection
+    paths: dict[str, str] = Field(default_factory=dict)
     groups: list[GroupConfig] = Field(min_length=1)
 
 
@@ -67,7 +89,8 @@ def _read_toml(path: Path) -> dict:
 def load_app_config(path: Path) -> AppConfig:
     try:
         config = AppConfig.model_validate(_read_toml(path))
-    except ValidationError as exc:
+        _validate_relative_path(config.workspace.run_records_dir, "workspace.run_records_dir")
+    except (ValidationError, ValueError) as exc:
         raise ValueError(f"Application configuration validation failed:\n{exc}") from exc
 
     workpath = config.app.workpath.expanduser()
@@ -91,7 +114,9 @@ def group_id_for(group: GroupConfig) -> str:
 def load_business_config(path: Path) -> BusinessConfig:
     try:
         config = BusinessConfig.model_validate(_read_toml(path))
-    except ValidationError as exc:
+        for key, value in config.paths.items():
+            _validate_relative_path(value, f"paths.{key}")
+    except (ValidationError, ValueError) as exc:
         raise ValueError(f"Business configuration validation failed:\n{exc}") from exc
 
     group_ids = [group_id_for(group) for group in config.groups]

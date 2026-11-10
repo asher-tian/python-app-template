@@ -1,59 +1,52 @@
 # Python App Template
 
-面向本地数据分析应用的 Copier 模板。以 CLI 为主要入口，Core 实现业务，Report 负责业务报告和交互，Store 管理工作空间；需要浏览器动态访问时，通过可选的本地 HTTP Server 提供页面和 API。
+面向本地数据分析应用的 Copier 模板。以 CLI 为主要入口，Core 实现业务，Report 负责业务报告和交互，Store 负责 Workspace 路径访问与 Run 记录；需要浏览器动态访问时，通过可选的本地 HTTP Server 提供页面和 API。
 
 ## 快速开始
 
 需要 Copier 9+、uv，以及 Python 3.12、3.13 或 3.14。
 
-```bash
-uv tool install copier
-copier copy gh:asher-tian/python-app-template ./my-app
-cd ./my-app
-uv sync --all-groups
+    uv tool install copier
+    copier copy gh:asher-tian/python-app-template ./my-app
+    cd ./my-app
+    uv sync --all-groups
 
-# 执行业务；两个示例业务都包含 alpha Group，用于验证业务隔离
-uv run my_app analysis --config analysis.cfg
-uv run my_app comparison --config comparison.cfg
+    uv run my_app analysis --config analysis.cfg
+    uv run my_app comparison --config comparison.cfg
+    uv run my_app http --config app.cfg
 
-# 启动本地报告中心
-uv run my_app http --config app.cfg
-```
-
-默认导入包名为 `my_app`。如果生成项目时修改了 `package_name`，运行命令时使用对应的包名。
+默认导入包名为 my_app。如果生成项目时修改了 package_name，运行命令时使用对应的包名。
 
 运行检查：
 
-```bash
-uv run ruff check .
-uv run ruff format --check .
-uv run pytest
-```
+    uv run ruff check .
+    uv run ruff format --check .
+    uv run pytest
 
 ## 架构
 
-- **CLI**：参数解析、配置加载、命令执行和运行编排。
-- **Core**：纯业务模型和业务流程；不依赖 CLI、HTTP、Report 或文件系统布局。
-- **Report**：业务专属报告生成、报告数据契约和共享前端资源。
-- **Store**：Workspace、路径安全、JSON/文件读写和运行 Manifest。
-- **HTTP**：可选的 FastAPI 本地接口，提供报告页面、数据 API 和业务二次分析 API；不承载业务逻辑。
+- CLI：参数解析、配置加载、命令执行和运行编排。
+- Core：纯业务模型和业务流程；不依赖 CLI、HTTP、Report 或文件系统布局。
+- Report：业务专属报告生成、报告数据契约和共享前端资源。
+- Store：Workspace 路径访问、Run 记录和通用文件操作。
+- HTTP：可选 FastAPI 本地接口，提供报告页面、Dataset API 和业务二次分析 API；不承载业务算法。
 
 不预建 Runtime、Bootstrap、Ports、Adapters、Task Registry、DAG、Worker 或消息队列。多 Group 的 I/O 型执行由命令层按需使用标准库线程池；CPU 进程池不是模板默认能力。
 
 ## Workspace / workpath
 
-`workpath` 是应用工作空间，不是固定的业务目录模板。模板只约定以下公共入口：
+workpath 是应用工作目录。Workspace 不保存自身 Manifest，不创建 workspace.json，也不强制创建 shared、businesses、data、reports 或 cache 等目录。
 
-- `.app/`：Workspace 元数据、Run Manifest 和日志。
-- `shared/`：跨业务共享数据的入口；其内部目录由使用方决定。
-- `businesses/`：业务命名空间。每个业务根目录必须提供 `business.json`，其内部目录完全由业务决定。
+全局配置 app.cfg 中的 workspace.run_records_dir 指定唯一的通用 Run 记录目录，默认是 .app/runs。每次 CLI 或 HTTP 任务在该目录下创建独立 Run 目录，包含 run.json 和日志。
 
-Business Manifest 声明 Group 及其 Group Manifest 相对路径；Group Manifest 声明运行历史、报告入口和 Dataset 路径。HTTP 通过元数据发现产物，不通过猜测 `reports/`、`data/` 等目录名推断业务含义。
+run.json 保存当次命令、Business 信息、完整有效配置、配置来源、Python / OS 环境、Group 执行结果、开始结束时间和异常摘要。敏感配置字段递归脱敏。每个 Run 只写自己的目录，不需要共享 Business / Group 元数据，也不需要 latest 指针文件。
 
-Business ID、Group ID 用于稳定标识和路径隔离；Label 是展示名称。不同业务可以拥有相同 Group Label。Run ID 标识一次执行，不是业务导航层级。
+## 业务路径与报告发现
 
-## 扩展原则
+每个业务配置通过 paths 声明自己的数据、报告和中间产物目录。路径相对于 workpath，内部结构完全由业务决定。通用 Workspace / Store 不理解业务目录含义。
 
-新增业务时，增加对应 Core workflow、CLI command 和业务专属 Report builder，并写出公共 Business / Group 元数据。业务可自由决定其内部数据、缓存、报告和中间产物目录，只需在 Group Manifest 中声明对外可访问的报告与 Dataset。
+Report 从 Run 记录聚合 Business -> Group -> Run 导航，latest successful Run 由历史 Run 计算得出。报告页面和 Dataset 的实际路径记录在对应 Run 的 Group 结果中；HTTP 只服务成功 Run 明确声明的产物，并进行路径安全校验。
 
-报告前端可执行筛选、排序和轻量统计；复杂或需要 Python 的二次分析通过 HTTP API 调用 Core。HTTP 只负责请求校验、调用和结果返回。默认只监听 loopback 地址，不引入分布式服务。
+报告按业务特性实现。新增业务时增加对应 Core workflow、CLI command、业务专属 Report builder，并把业务路径写入该业务配置；不需要增加 Business / Group Manifest。
+
+报告前端可以执行筛选、排序和轻量统计；复杂或需要 Python 的二次分析通过 HTTP API 调用 Core。HTTP 默认只监听 loopback 地址，不引入分布式服务。

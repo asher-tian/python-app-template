@@ -9,30 +9,41 @@ def _write_configs(tmp_path):
     app_config = tmp_path / "app.cfg"
     app_config.write_text(
         '[app]\nworkpath = "./workspace"\n'
+        '[workspace]\nrun_records_dir = "run-data/history"\n'
         '[http]\nhost = "127.0.0.1"\nport = 8000\nauto_open = false\n',
         encoding="utf-8",
     )
     analysis_config = tmp_path / "analysis.cfg"
     analysis_config.write_text(
         '[business]\nid = "analysis"\nname = "Analysis"\n'
+        '[paths]\ndatasets = "analysis-files/datasets"\n'
+        'reports = "analysis-files/reports"\n'
+        'derived = "analysis-files/derived"\n'
         '[[groups]]\nlabel = "alpha"\nitem_count = 5\nthreshold = 2\n',
         encoding="utf-8",
     )
     comparison_config = tmp_path / "comparison.cfg"
     comparison_config.write_text(
         '[business]\nid = "comparison"\nname = "Comparison"\n'
+        '[paths]\nexports = "comparison-files/exports"\n'
+        'reports = "comparison-files/reports"\n'
         '[[groups]]\nlabel = "alpha"\nitem_count = 3\nthreshold = 0\n',
         encoding="utf-8",
     )
     return app_config, analysis_config, comparison_config
 
 
-def test_http_discovers_businesses_serves_reports_and_persists_secondary_analysis(tmp_path):
+def test_http_discovers_from_run_records_and_persists_secondary_analysis(tmp_path):
     app_config, analysis_config, comparison_config = _write_configs(tmp_path)
     assert execute_analysis(analysis_config, app_config) == 0
     assert execute_comparison(comparison_config, app_config) == 0
 
-    client = TestClient(create_app(tmp_path / "workspace"))
+    client = TestClient(
+        create_app(
+            tmp_path / "workspace",
+            run_records_dir="run-data/history",
+        )
+    )
     businesses = client.get("/api/businesses").json()
     assert [item["business_id"] for item in businesses] == ["analysis", "comparison"]
 
@@ -66,11 +77,25 @@ def test_http_discovers_businesses_serves_reports_and_persists_secondary_analysi
     )
     assert unsupported.status_code == 409
 
+    run_files = list(
+        (tmp_path / "workspace" / "run-data" / "history").glob("*/run.json")
+    )
+    assert len(run_files) == 3
+    assert not (tmp_path / "workspace" / "business.json").exists()
+    assert not (tmp_path / "workspace" / "businesses").exists()
+
 
 def test_http_does_not_expose_undeclared_workspace_files(tmp_path):
     app_config, analysis_config, _ = _write_configs(tmp_path)
     execute_analysis(analysis_config, app_config)
-    client = TestClient(create_app(tmp_path / "workspace"))
+    client = TestClient(
+        create_app(
+            tmp_path / "workspace",
+            run_records_dir="run-data/history",
+        )
+    )
 
-    response = client.get("/businesses/analysis/groups/alpha/../../../../.app/workspace.json")
-    assert response.status_code in (404, 405)
+    response = client.get("/analysis-files/datasets/alpha/private.json")
+    assert response.status_code == 404
+    traversal = client.get("/businesses/analysis/groups/alpha/../../../../etc/passwd")
+    assert traversal.status_code in (404, 405)

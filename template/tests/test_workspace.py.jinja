@@ -4,18 +4,28 @@ from {{ package_name }}.store.files import resolve_relative
 from {{ package_name }}.store.workspace import Workspace
 
 
-def test_workspace_initializes_only_public_top_level_areas(tmp_path):
-    workspace = Workspace(tmp_path / "work")
+def test_workspace_only_resolves_paths_and_creates_its_root(tmp_path):
+    root = tmp_path / "work"
+    workspace = Workspace(root, run_records_dir="records/executions")
     workspace.initialize()
 
-    assert workspace.app_dir.is_dir()
-    assert workspace.shared_dir.is_dir()
-    assert workspace.businesses_dir.is_dir()
-    assert not workspace.business_dir("analysis").exists()
-    assert (workspace.app_dir / "workspace.json").is_file()
+    assert root.is_dir()
+    assert workspace.run_records_root == root / "records" / "executions"
+    assert not (root / "workspace.json").exists()
+    assert not (root / ".app").exists()
+    assert not (root / "shared").exists()
+    assert not (root / "businesses").exists()
 
 
-@pytest.mark.parametrize("value", ["../escape", "/absolute", "a/../../b", ""])
+def test_run_record_directory_uses_configured_location(tmp_path):
+    workspace = Workspace(tmp_path / "work", run_records_dir="custom/run-history")
+    assert workspace.run_dir("run-123") == (
+        tmp_path / "work" / "custom" / "run-history" / "run-123"
+    )
+    assert workspace.run_record_path("run-123") == "custom/run-history/run-123/run.json"
+
+
+@pytest.mark.parametrize("value", ["../escape", "/absolute", "a/../../b", "", "C:/outside"])
 def test_relative_path_rejects_unsafe_values(tmp_path, value):
     with pytest.raises(ValueError):
         resolve_relative(tmp_path, value)

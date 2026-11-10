@@ -51,7 +51,10 @@ def execute(
         "Serving workspace %s at %s", selected_workpath, url
     )
     uvicorn.run(
-        create_app(selected_workpath),
+        create_app(
+            selected_workpath,
+            run_records_dir=config.workspace.run_records_dir,
+        ),
         host=selected_host,
         port=selected_port,
         log_level="info",

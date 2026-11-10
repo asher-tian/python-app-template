@@ -11,24 +11,31 @@
 
 - CLI 负责参数、配置、命令编排、运行生命周期和退出码。
 - Core 负责业务模型、业务规则和分析流程；不得依赖 CLI、Pydantic 配置模型、HTTP、Report、Store 或具体路径。
-- Report 负责业务报告生成、Report Dataset 契约和前端交互；不得复制 Core 业务算法。
-- Store 负责 Workspace、路径解析、安全文件访问和持久化基础操作；不解释业务目录内部含义。
+- Report 负责业务专属报告生成、报告数据契约和前端交互；不得复制 Core 业务算法。
+- Store 负责 Workspace 路径访问、Run 记录和通用文件操作；不解释业务目录内部含义。
 - HTTP 负责页面服务、请求校验和调用业务入口；不得在路由中实现业务算法或直接拼接业务内部目录。
 - CLI 和 HTTP 可以调用同一 Core workflow。Core 不反向依赖任何入口。
 - 不预建 Runtime、Bootstrap、Ports、Adapters、Repository Framework、Task Registry、Component Registry、DAG Engine、插件系统或分布式 Worker。
 
-## Workspace 规范
+## Workspace 与路径
 
-- `workpath` 是应用工作空间。
-- 模板统一管理 `.app/`、`shared/`、`businesses/` 三个公共入口。
-- `.app/` 保存 workspace 元数据、Run Manifest 和日志；`shared/` 是跨业务共享区域；`businesses/` 是业务命名空间。
-- 每个 Business 根目录必须有 `business.json`。其中声明 Business ID、展示信息、Group ID / Label 以及 Group Manifest 相对路径。
-- Group Manifest 声明 Group 的运行历史、latest successful Run、报告入口和 Dataset。
-- Business 内部目录结构由业务决定。不得在公共 Workspace API、HTTP 路由或通用 Store 中写死 `data/`、`reports/`、`cache/` 等业务目录名称。
-- 所有 Manifest 中的产物路径均为相对于对应 Business 根目录的 POSIX 相对路径。必须通过安全路径解析函数访问。
-- 禁止绝对路径、路径穿越、反斜杠路径和通过符号链接逃逸 Business 根目录。
-- Business ID、Group ID、Run ID 是稳定标识；Label 是展示名称。不同 Business 可以有相同 Label。
-- 同一个 Business 的元数据更新必须原子写入。多个进程同时写同一个 Business 时，必须明确并发策略，不得假设原子替换等于事务锁。
+- workpath 是应用工作目录，不是固定的业务目录模板。
+- Workspace 只负责根路径、相对路径解析和路径安全；初始化时只确保 workpath 根目录存在。
+- 禁止 workspace.json、business.json、Group Manifest 或任何跨 Run 的业务元数据文件。
+- 不创建固定的 shared/、businesses/、data/、reports/、cache/ 等业务目录。
+- 唯一通用持久化约定是 Run 记录目录；其相对路径由 app.cfg 的 workspace.run_records_dir 配置，默认值为 .app/runs。
+- Business 自己在业务配置中声明所需路径；业务内部目录结构完全由业务决定。通用 Store 不解释这些路径的业务含义。
+- 所有相对路径必须是 POSIX 相对路径，禁止绝对路径、路径穿越、反斜杠和通过符号链接逃逸 workpath。
+- Business ID、Group ID 用于业务标识；Label 仅用于展示。不同 Business 可以有相同 Group ID 或 Label。
+
+## Run 记录
+
+- 每次 CLI 或 HTTP 任务执行创建独立 Run ID，并在配置的 Run 记录目录下写入 run.json。
+- run.json 保存命令、Business 信息、开始/结束时间、状态、有效配置、配置来源、运行环境、Group 结果和异常摘要。
+- 有效配置必须递归脱敏；密码、Token、密钥和凭据不得明文写入 Run 记录。
+- Run 记录在任务开始时创建；Group 完成时增量更新；结束时写入最终状态。
+- 每个 Run 只写自己的目录。禁止通过更新共享 Business 或 Group 文件维护 latest 状态。
+- latest successful Run 由 Report 从 Run 记录中计算，不额外持久化。
 
 ## Core / Report
 
@@ -36,16 +43,17 @@
 - Core 输入输出使用 dataclass 或简单类型，不使用 Pydantic 作为领域模型。
 - Report Dataset 是面向报告的数据契约，不等同于 Core 内部模型。
 - 报告按 Business 特性实现；同一 Business 下 Group 是平级单元。
-- 报告页面、数据文件和中间产物的物理布局由 Business 决定，并在 Group Manifest 中声明。
+- Business 配置声明的路径由对应业务的 Report builder 使用；不要把业务目录名写进通用 Workspace 或 Store。
+- Report 可以扫描和聚合 Run 记录，构建 Business -> Group -> Run 导航；不生成或维护 Business / Group Manifest。
 - 浏览器端只承担展示、筛选和轻量计算；复杂业务分析必须调用 Core。
 - 不为了统一外观强制所有业务使用相同页面结构。
 
 ## HTTP
 
 - HTTP 是可选的本地服务，默认只监听 127.0.0.1。
-- HTTP 通过 Business / Group Manifest 发现业务、报告和 Dataset，不扫描或暴露任意业务文件。
-- 不得把整个 workpath 或 Business 根目录直接挂载为静态文件目录。
-- 对外文件只允许通过 Manifest 声明的相对路径访问，并再次进行路径安全校验。
+- HTTP 通过 Report 从 Run 记录发现报告和 Dataset，不扫描或暴露任意 workpath 文件。
+- 不得把整个 workpath 或业务目录直接挂载为静态文件目录。
+- 对外文件必须来自成功 Run 的输出记录，并再次进行路径安全校验。
 - 路由负责请求校验和调用 Core；业务差异由明确的业务模块实现，不引入动态 Registry。
 - 默认同步执行；没有实际需求时不引入 Celery、Kafka、Redis 或 Worker。
 
@@ -53,14 +61,12 @@
 
 - 多 Group 并发按需使用 ThreadPoolExecutor；不暴露 CPU、MEM 或 Worker 数量配置。
 - 不默认创建 ProcessPoolExecutor。确有 CPU 密集需求时，在具体应用中引入共享进程池。
-- Run ID 标识一次命令执行；Run Manifest 和日志位于 `.app/runs/{run_id}/`。
-- 运行日志保留 JSONL；Console 显示摘要，不输出异常堆栈；文件日志保留异常堆栈。
-- Manifest 保存有效配置、环境、Business / Group 结果和异常摘要；密码、Token、密钥等字段必须递归脱敏。
-- 失败的 Run 不得覆盖 Group 的 latest successful Run。
+- Run 日志与 run.json 位于同一个 Run 目录；日志保留 JSONL，Console 显示摘要，文件日志保留异常堆栈。
+- 不同 Run 之间无共享写入；同一个 Run 内由主线程汇总 Group 结果并原子更新 run.json。
 
 ## 配置与工具链
 
-- 全局应用配置与业务配置分离：`app.cfg` 管理 workpath 和 HTTP；各业务配置管理业务参数与 Groups。
+- 全局 app.cfg 管理 workpath、Run 记录路径和 HTTP；各业务配置管理业务参数、Groups 和业务专属路径。
 - 配置文件使用 TOML；外部输入由 CLI / HTTP 边界校验后映射到 Core 输入。
 - 使用 uv 管理环境；保持 src 布局。
 - 仅在确有必要时增加依赖，并说明原因。
