@@ -101,17 +101,21 @@ def execute_business(
                     report_builder=report_builder,
                     logger=group_logger,
                 )
-                future_map[future] = (group, group_id)
+                future_map[future] = (group, group_id, group_logger)
 
             for future in as_completed(future_map):
-                group, group_id = future_map[future]
+                group, group_id, group_logger = future_map[future]
                 try:
                     outcomes[group_id] = future.result()
                 except Exception as exc:
-                    logging.getLogger("{{ package_name }}").exception(
-                        "Group execution failed; business=%s group=%s",
+                    group_logger.exception("Group execution failed")
+                    run_logger.error(
+                        "Group failed; business=%s group=%s error=%s: %s",
                         business.id,
                         group_id,
+                        type(exc).__name__,
+                        exc,
+                        extra={"business_id": business.id, "group_id": group_id},
                     )
                     outcomes[group_id] = GroupRunResult(
                         group_id=group_id,
