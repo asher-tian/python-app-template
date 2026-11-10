@@ -16,6 +16,7 @@ from {{ package_name }}.report.builders import build_analysis_reanalysis_report
 from {{ package_name }}.report.catalog import ReportCatalog
 from {{ package_name }}.report.models import GroupRunResult
 from {{ package_name }}.store.run_record import RunRecordStore
+from {{ package_name }}.store.logging import RunLogging
 from {{ package_name }}.store.workspace import Workspace
 
 
@@ -141,6 +142,24 @@ def create_app(
                 "source_run_id": source_run.run_id,
             },
         )
+        logging_manager = RunLogging(
+            run_record.run_dir,
+            command="http.analysis",
+            run_id=run_id,
+        )
+        run_logger = logging_manager.run_logger
+        group_logger = logging_manager.group_logger(group_id, business_id)
+        run_logger.info(
+            "Run started; business=%s group=%s",
+            business_id,
+            group_id,
+            extra={"business_id": business_id, "group_id": group_id},
+        )
+        group_logger.info(
+            "Secondary analysis started; source_run_id=%s threshold=%d",
+            source_run.run_id,
+            request.threshold,
+        )
         try:
             result = reanalyze_records(records, request.threshold)
             group_result = build_analysis_reanalysis_report(
@@ -157,12 +176,23 @@ def create_app(
                 [group_result.model_dump(mode="json")],
                 "success",
             )
+            group_logger.info("Secondary analysis completed")
+            run_logger.info("Run finished; business=%s group=%s", business_id, group_id)
             return {
                 **group_result.model_dump(mode="json"),
                 "run_id": run_id,
                 "source_run_id": source_run.run_id,
             }
         except Exception as exc:
+            group_logger.exception("Secondary analysis failed")
+            run_logger.error(
+                "Run failed; business=%s group=%s error=%s: %s",
+                business_id,
+                group_id,
+                type(exc).__name__,
+                exc,
+                extra={"business_id": business_id, "group_id": group_id},
+            )
             failed_group = GroupRunResult(
                 group_id=group_id,
                 label=source_group.label,
@@ -178,5 +208,7 @@ def create_app(
                 status_code=500,
                 detail=f"Secondary analysis failed: {type(exc).__name__}: {exc}",
             ) from exc
+        finally:
+            logging_manager.close()
 
     return app
