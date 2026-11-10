@@ -61,7 +61,7 @@
 
 - 多 Group 并发按需使用 ThreadPoolExecutor；不暴露 CPU、MEM 或 Worker 数量配置。
 - 不默认创建 ProcessPoolExecutor。确有 CPU 密集需求时，在具体应用中引入共享进程池。
-- Run 日志与 run.json 位于同一个 Run 目录；日志保留 JSONL，Console 显示摘要，文件日志保留异常堆栈。
+- Run 日志与 run.json 位于同一个 Run 目录；run.log / groups/*.log 保留 DEBUG 文本、源码文件和行号及完整异常堆栈，run.jsonl / groups/*.jsonl 保存结构化事件；Console 仅显示 INFO 及异常摘要，不输出堆栈。
 - 不同 Run 之间无共享写入；同一个 Run 内由主线程汇总 Group 结果并原子更新 run.json。
 
 ## 配置与工具链
