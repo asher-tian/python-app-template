@@ -31,6 +31,10 @@ def test_jsonl_contains_run_and_group_context_and_keeps_traceback_out_of_console
             tmp_path / "logs" / "groups" / "analysis_alpha.jsonl"
         ).read_text(encoding="utf-8").splitlines()
     ]
+    run_text = (tmp_path / "logs" / "run.log").read_text(encoding="utf-8")
+    group_text = (
+        tmp_path / "logs" / "groups" / "analysis_alpha.log"
+    ).read_text(encoding="utf-8")
 
     assert run_records[0]["message"] == "Run started"
     assert run_records[0]["run_id"] == "run-1"
@@ -42,5 +46,9 @@ def test_jsonl_contains_run_and_group_context_and_keeps_traceback_out_of_console
     assert group_records[0]["group_id"] == "alpha"
     assert group_records[-1]["exception"]["type"] == "ValueError"
     assert "Traceback" in group_records[-1]["exception"]["stacktrace"]
+    assert "ValueError: invalid sample" in group_text
+    assert "Traceback (most recent call last)" in group_text
+    assert "test_logging.py:" in group_text
+    assert "Run started" in run_text
     assert "ValueError: invalid sample" in console
     assert "Traceback" not in console
