@@ -1,0 +1,61 @@
+"""Public metadata contract used for Business and Group discovery."""
+
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class GroupReference(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    group_id: str
+    label: str
+    manifest: str
+
+
+class BusinessManifest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal[1] = 1
+    business_id: str
+    name: str
+    description: str = ""
+    groups: list[GroupReference] = Field(default_factory=list)
+
+
+class ReportReference(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    entry: str
+
+
+class DatasetReference(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    title: str
+    path: str
+    format: str = "json"
+
+
+class RunRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    run_id: str
+    created_at: str
+    status: Literal["success", "failed"]
+    report: ReportReference | None = None
+    datasets: list[DatasetReference] = Field(default_factory=list)
+    summary: dict[str, object] = Field(default_factory=dict)
+    error: str | None = None
+
+
+class GroupManifest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal[1] = 1
+    business_id: str
+    group_id: str
+    label: str
+    latest_run_id: str | None = None
+    runs: list[RunRecord] = Field(default_factory=list)

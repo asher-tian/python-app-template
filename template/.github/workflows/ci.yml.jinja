@@ -17,3 +17,6 @@ jobs:
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run pytest
+      - run: uv run {{ package_name }} analysis --config analysis.cfg
+      - run: uv run {{ package_name }} comparison --config comparison.cfg
+      - run: uv run {{ package_name }} http --help

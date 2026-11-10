@@ -1,0 +1,77 @@
+import json
+
+from fastapi.testclient import TestClient
+
+from {{ package_name }}.cli.commands.analysis import execute as execute_analysis
+from {{ package_name }}.cli.commands.comparison import execute as execute_comparison
+from {{ package_name }}.http.app import create_app
+
+
+def _write_configs(tmp_path):
+    app_config = tmp_path / "app.cfg"
+    app_config.write_text(
+        '[app]\nworkpath = "./workspace"\n[http]\nhost = "127.0.0.1"\nport = 8000\nauto_open = false\n',
+        encoding="utf-8",
+    )
+    analysis_config = tmp_path / "analysis.cfg"
+    analysis_config.write_text(
+        '[business]\nid = "analysis"\nname = "Analysis"\n'
+        '[[groups]]\nlabel = "alpha"\nitem_count = 5\nthreshold = 2\n',
+        encoding="utf-8",
+    )
+    comparison_config = tmp_path / "comparison.cfg"
+    comparison_config.write_text(
+        '[business]\nid = "comparison"\nname = "Comparison"\n'
+        '[[groups]]\nlabel = "alpha"\nitem_count = 3\nthreshold = 0\n',
+        encoding="utf-8",
+    )
+    return app_config, analysis_config, comparison_config
+
+
+def test_http_discovers_businesses_serves_reports_and_persists_secondary_analysis(tmp_path):
+    app_config, analysis_config, comparison_config = _write_configs(tmp_path)
+    assert execute_analysis(analysis_config, app_config) == 0
+    assert execute_comparison(comparison_config, app_config) == 0
+
+    client = TestClient(create_app(tmp_path / "workspace"))
+    businesses = client.get("/api/businesses").json()
+    assert [item["business_id"] for item in businesses] == ["analysis", "comparison"]
+
+    analysis_group = client.get("/api/businesses/analysis/groups/alpha").json()
+    comparison_group = client.get("/api/businesses/comparison/groups/alpha").json()
+    assert analysis_group["group"]["label"] == comparison_group["group"]["label"] == "alpha"
+
+    page = client.get("/businesses/analysis/groups/alpha")
+    assert page.status_code == 200
+    assert "data-business-id=\"analysis\"" in page.text
+
+    dataset = client.get(
+        "/api/businesses/analysis/groups/alpha/datasets/records"
+    ).json()
+    assert len(dataset["records"]) == 5
+
+    response = client.post(
+        "/api/businesses/analysis/groups/alpha/analysis",
+        json={"threshold": 4},
+    )
+    assert response.status_code == 200
+    assert response.json()["summary"]["selected_count"] == 2
+
+    updated = client.get("/api/businesses/analysis/groups/alpha").json()
+    assert updated["latest_run"]["run_id"] == response.json()["run_id"]
+    assert len(updated["group"]["runs"]) == 2
+
+    unsupported = client.post(
+        "/api/businesses/comparison/groups/alpha/analysis",
+        json={"threshold": 1},
+    )
+    assert unsupported.status_code == 409
+
+
+def test_http_does_not_expose_undeclared_workspace_files(tmp_path):
+    app_config, analysis_config, _ = _write_configs(tmp_path)
+    execute_analysis(analysis_config, app_config)
+    client = TestClient(create_app(tmp_path / "workspace"))
+
+    response = client.get("/businesses/analysis/groups/alpha/../../../../.app/workspace.json")
+    assert response.status_code in (404, 405)

@@ -1,0 +1,34 @@
+from pathlib import Path
+
+import pytest
+
+from {{ package_name }}.store.files import resolve_relative
+from {{ package_name }}.store.workspace import Workspace
+
+
+def test_workspace_initializes_only_public_top_level_areas(tmp_path):
+    workspace = Workspace(tmp_path / "work")
+    workspace.initialize()
+
+    assert workspace.app_dir.is_dir()
+    assert workspace.shared_dir.is_dir()
+    assert workspace.businesses_dir.is_dir()
+    assert not workspace.business_dir("analysis").exists()
+    assert (workspace.app_dir / "workspace.json").is_file()
+
+
+@pytest.mark.parametrize("value", ["../escape", "/absolute", "a/../../b", ""])
+def test_relative_path_rejects_unsafe_values(tmp_path, value):
+    with pytest.raises(ValueError):
+        resolve_relative(tmp_path, value)
+
+
+def test_relative_path_rejects_symlink_escape(tmp_path):
+    root = tmp_path / "workspace"
+    root.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (root / "link").symlink_to(outside, target_is_directory=True)
+
+    with pytest.raises(ValueError, match="escapes"):
+        resolve_relative(root, "link/file.json")

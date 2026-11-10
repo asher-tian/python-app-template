@@ -1,0 +1,57 @@
+"""Safe, atomic file operations rooted in an explicit directory."""
+
+from __future__ import annotations
+
+import json
+import uuid
+from pathlib import Path, PurePosixPath
+from typing import Any
+
+
+def resolve_relative(root: Path, relative_path: str) -> Path:
+    if not isinstance(relative_path, str) or not relative_path:
+        raise ValueError("A non-empty relative path is required")
+    relative = PurePosixPath(relative_path)
+    if (
+        relative.is_absolute()
+        or ".." in relative.parts
+        or "\\" in relative_path
+        or ":" in relative.parts[0]
+    ):
+        raise ValueError("Path must be a safe POSIX relative path")
+
+    resolved_root = root.resolve()
+    target = (resolved_root / Path(*relative.parts)).resolve()
+    try:
+        target.relative_to(resolved_root)
+    except ValueError as exc:
+        raise ValueError("Resolved path escapes its allowed root") from exc
+    if target == resolved_root:
+        raise ValueError("A file path cannot refer to the root directory")
+    return target
+
+
+def read_json(root: Path, relative_path: str) -> Any:
+    path = resolve_relative(root, relative_path)
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def write_json(root: Path, relative_path: str, value: Any) -> str:
+    path = resolve_relative(root, relative_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+    temporary.write_text(
+        json.dumps(value, ensure_ascii=False, indent=2, default=str) + "\n",
+        encoding="utf-8",
+    )
+    temporary.replace(path)
+    return PurePosixPath(relative_path).as_posix()
+
+
+def write_text(root: Path, relative_path: str, content: str) -> str:
+    path = resolve_relative(root, relative_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+    temporary.write_text(content, encoding="utf-8")
+    temporary.replace(path)
+    return PurePosixPath(relative_path).as_posix()

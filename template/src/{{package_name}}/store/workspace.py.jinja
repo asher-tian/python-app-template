@@ -1,0 +1,56 @@
+"""Workspace root and the three public top-level areas."""
+
+from __future__ import annotations
+
+import re
+from datetime import UTC, datetime
+from pathlib import Path
+
+from {{ package_name }}.store.files import write_json
+
+
+_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
+
+
+def validate_id(value: str, kind: str) -> str:
+    if not _ID_PATTERN.fullmatch(value):
+        raise ValueError(f"Invalid {kind}: {value!r}")
+    return value
+
+
+class Workspace:
+    def __init__(self, root: Path) -> None:
+        self.root = root.expanduser().resolve()
+
+    @property
+    def app_dir(self) -> Path:
+        return self.root / ".app"
+
+    @property
+    def shared_dir(self) -> Path:
+        return self.root / "shared"
+
+    @property
+    def businesses_dir(self) -> Path:
+        return self.root / "businesses"
+
+    def business_dir(self, business_id: str) -> Path:
+        return self.businesses_dir / validate_id(business_id, "Business ID")
+
+    def run_dir(self, run_id: str) -> Path:
+        return self.app_dir / "runs" / validate_id(run_id, "Run ID")
+
+    def initialize(self) -> None:
+        self.app_dir.mkdir(parents=True, exist_ok=True)
+        self.shared_dir.mkdir(parents=True, exist_ok=True)
+        self.businesses_dir.mkdir(parents=True, exist_ok=True)
+        metadata_path = self.app_dir / "workspace.json"
+        if not metadata_path.exists():
+            write_json(
+                self.app_dir,
+                "workspace.json",
+                {
+                    "schema_version": 1,
+                    "created_at": datetime.now(UTC).isoformat(),
+                },
+            )

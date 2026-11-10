@@ -1,6 +1,6 @@
-"""Run the CLI with python -m {{ package_name }}."""
+"""Run the application CLI with python -m {{ package_name }}."""
 
-from {{ package_name }}.interfaces.cli.main import main
+from {{ package_name }}.cli.main import main
 
 if __name__ == "__main__":
     raise SystemExit(main())

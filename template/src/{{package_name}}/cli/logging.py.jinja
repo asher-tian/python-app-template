@@ -1,0 +1,91 @@
+"""Run-scoped JSONL logging with concise console output."""
+
+from __future__ import annotations
+
+import json
+import logging
+from datetime import UTC, datetime
+from pathlib import Path
+
+
+class JsonLineFormatter(logging.Formatter):
+    def format(self, record: logging.LogRecord) -> str:
+        payload: dict[str, object] = {
+            "timestamp": datetime.fromtimestamp(record.created, UTC).isoformat(),
+            "level": record.levelname,
+            "logger": record.name,
+            "message": record.getMessage(),
+            "run_id": getattr(record, "run_id", None),
+            "command": getattr(record, "command", None),
+            "business_id": getattr(record, "business_id", None),
+            "group_id": getattr(record, "group_id", None),
+        }
+        if record.exc_info:
+            exception_type, exception_value, _ = record.exc_info
+            payload["exception"] = {
+                "type": exception_type.__name__ if exception_type else "Exception",
+                "message": str(exception_value),
+                "stacktrace": self.formatException(record.exc_info),
+            }
+        return json.dumps(payload, ensure_ascii=False)
+
+
+class ConsoleFormatter(logging.Formatter):
+    def format(self, record: logging.LogRecord) -> str:
+        message = f"{record.levelname} {record.getMessage()}"
+        if record.exc_info:
+            exception = record.exc_info[1]
+            message += f": {type(exception).__name__}: {exception}"
+        return message
+
+
+class RunLogging:
+    def __init__(self, run_dir: Path, *, command: str, run_id: str) -> None:
+        self._handlers: list[logging.Handler] = []
+        self._loggers: list[logging.Logger] = []
+        self._context = {"command": command, "run_id": run_id}
+        logs_dir = run_dir / "logs"
+        (logs_dir / "groups").mkdir(parents=True, exist_ok=True)
+        self.run_logger = self._create_logger(
+            f"{{ package_name }}.run.{run_id}",
+            logs_dir / "run.jsonl",
+            console=True,
+        )
+
+    def _create_logger(self, name: str, path: Path, *, console: bool = False) -> logging.Logger:
+        logger = logging.getLogger(name)
+        logger.handlers.clear()
+        logger.setLevel(logging.DEBUG)
+        logger.propagate = False
+
+        file_handler = logging.FileHandler(path, encoding="utf-8")
+        file_handler.setLevel(logging.DEBUG)
+        file_handler.setFormatter(JsonLineFormatter())
+        logger.addHandler(file_handler)
+        self._handlers.append(file_handler)
+
+        if console:
+            console_handler = logging.StreamHandler()
+            console_handler.setLevel(logging.INFO)
+            console_handler.setFormatter(ConsoleFormatter())
+            logger.addHandler(console_handler)
+            self._handlers.append(console_handler)
+
+        self._loggers.append(logger)
+        return logger
+
+    def group_logger(self, group_id: str, business_id: str) -> logging.Logger:
+        path = self._handlers[0].baseFilename
+        group_dir = Path(path).parent / "groups"
+        return self._create_logger(
+            f"{{ package_name }}.group.{self._context['run_id']}.{group_id}",
+            group_dir / f"{business_id}_{group_id}.jsonl",
+        )
+
+    def close(self) -> None:
+        for logger in self._loggers:
+            logger.handlers.clear()
+        for handler in self._handlers:
+            handler.close()
+        self._handlers.clear()
+        self._loggers.clear()

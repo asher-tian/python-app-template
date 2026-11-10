@@ -1,0 +1,39 @@
+import json
+
+from {{ package_name }}.cli.main import main
+
+
+def test_cli_creates_business_scoped_workspace_and_run_records(tmp_path):
+    app_config = tmp_path / "app.cfg"
+    app_config.write_text(
+        '[app]\nworkpath = "./workspace"\n[http]\nauto_open = false\n',
+        encoding="utf-8",
+    )
+    analysis_config = tmp_path / "analysis.cfg"
+    analysis_config.write_text(
+        '[business]\nid = "analysis"\nname = "Analysis"\n'
+        '[[groups]]\nlabel = "alpha"\nitem_count = 4\n'
+        '[[groups]]\nlabel = "beta"\nitem_count = 3\n',
+        encoding="utf-8",
+    )
+
+    assert main([
+        "analysis",
+        "--config",
+        str(analysis_config),
+        "--app-config",
+        str(app_config),
+    ]) == 0
+
+    workspace = tmp_path / "workspace"
+    business = json.loads(
+        (workspace / "businesses" / "analysis" / "business.json").read_text(encoding="utf-8")
+    )
+    assert {item["group_id"] for item in business["groups"]} == {"alpha", "beta"}
+
+    manifests = list((workspace / ".app" / "runs").glob("*/manifest.json"))
+    assert len(manifests) == 1
+    run = json.loads(manifests[0].read_text(encoding="utf-8"))
+    assert run["run"]["status"] == "success"
+    assert len(run["groups"]) == 2
+    assert (workspace / "shared").is_dir()

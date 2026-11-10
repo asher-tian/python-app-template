@@ -1,0 +1,91 @@
+"""Atomic writers for the public Business / Group metadata contract."""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+from {{ package_name }}.report.models import (
+    BusinessManifest,
+    GroupManifest,
+    GroupReference,
+    RunRecord,
+)
+from {{ package_name }}.store.files import write_json
+from {{ package_name }}.store.workspace import Workspace
+
+
+def record_group_run(
+    *,
+    workspace: Workspace,
+    business_id: str,
+    business_name: str,
+    business_description: str,
+    group_id: str,
+    group_label: str,
+    group_manifest_path: str,
+    run: RunRecord,
+) -> None:
+    """Record one run without imposing a layout on business-owned artifacts."""
+    business_root = workspace.business_dir(business_id)
+    business_root.mkdir(parents=True, exist_ok=True)
+
+    group_path = business_root / group_manifest_path
+    if group_path.exists():
+        current_group = GroupManifest.model_validate(
+            json.loads(group_path.read_text(encoding="utf-8"))
+        )
+        if current_group.business_id != business_id or current_group.group_id != group_id:
+            raise ValueError("Existing Group Manifest identity does not match its location")
+    else:
+        current_group = GroupManifest(
+            business_id=business_id,
+            group_id=group_id,
+            label=group_label,
+        )
+
+    runs = [item for item in current_group.runs if item.run_id != run.run_id]
+    runs.append(run)
+    latest_run_id = current_group.latest_run_id
+    if run.status == "success":
+        latest_run_id = run.run_id
+
+    updated_group = current_group.model_copy(
+        update={
+            "label": group_label,
+            "latest_run_id": latest_run_id,
+            "runs": runs,
+        }
+    )
+    write_json(business_root, group_manifest_path, updated_group.model_dump(mode="json"))
+
+    business_manifest_path = business_root / "business.json"
+    if business_manifest_path.exists():
+        current_business = BusinessManifest.model_validate(
+            json.loads(business_manifest_path.read_text(encoding="utf-8"))
+        )
+        if current_business.business_id != business_id:
+            raise ValueError("Business Manifest identity does not match its directory")
+    else:
+        current_business = BusinessManifest(
+            business_id=business_id,
+            name=business_name,
+            description=business_description,
+        )
+
+    references = [item for item in current_business.groups if item.group_id != group_id]
+    references.append(
+        GroupReference(
+            group_id=group_id,
+            label=group_label,
+            manifest=group_manifest_path,
+        )
+    )
+    updated_business = current_business.model_copy(
+        update={
+            "name": business_name,
+            "description": business_description,
+            "groups": sorted(references, key=lambda item: item.group_id),
+        }
+    )
+    write_json(business_root, "business.json", updated_business.model_dump(mode="json"))

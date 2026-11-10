@@ -1,57 +1,70 @@
 # {{ project_name }}
 
-由 Python App Copier 模板生成。默认提供 CLI 接口，业务 Core 与外部接口、基础设施实现解耦。
+由 Python App Copier 模板生成的本地分析应用。
 
-## 架构
-
-- core/workflows：完整、独立的业务闭环。
-- core/tasks：Workflow 组合的独立业务单元。
-- core/components：按需放置可复用的纯功能模块，不使用注册表。
-- core/ports：Core 需要的外部能力契约。
-- interfaces/cli：命令入口、配置 Schema、Loader 和 Mapper。
-- infrastructure：进程池、日志、文件存储及可选基础设施适配器。
-- runtime：WorkflowRunner、共享资源创建和生命周期管理。
-
-一个 Command 选择一个 Workflow。配置可以包含多个执行输入；每个输入创建一个独立 Workflow 实例。Workflow 之间不共享业务状态，也不合并业务结果。
-
-## 并发模型
-
-WorkflowRunner 固定使用 ThreadPoolExecutor 并发运行 Workflow 实例。所有 Workflow 共享 Runtime 创建的 ProcessPoolExecutor，只有 CPU 密集计算才提交到该进程池。
-
-应用不配置 CPU/MEM 预算。线程池和进程池采用 Python 标准库默认 Worker 策略。Workflow 和 Task 不得自行创建执行池。
-
-ProcessPool worker 必须是模块顶层可导入函数，只接收可序列化的数据参数并返回可序列化结果。不要传递 Task、Workflow、Logger、数据库连接或 Executor。
-
-## 配置
-
-示例 config.json 定义 workpath 和多个 groups。CLI Schema 负责校验外部 JSON；Mapper 将每个 group 转换为 AnalysisWorkflowInput。Core 不依赖 Pydantic 或 JSON。
-
-未来增加 Web 时，可以定义独立的 Request Schema 和 Mapper；只要映射到相同 Workflow Input，就可以复用 Workflow 和 Task。当前模板不包含 Web 实现。
-
-## 日志与运行产物
-
-CLI 日志位于 workpath/logs/{command}/{date}/{time}_{run_id}/：
-
-- run.jsonl：命令级事件和 Workflow 执行摘要。
-- workflows/{workflow_name}_{execution_id}.jsonl：单次 Workflow 的详细日志，包括其 Task 日志。
-- manifest.json：运行元数据、完整有效配置（敏感字段脱敏）、环境信息和执行状态。
-
-JSONL 每条日志占一行。异常堆栈作为 exception.stacktrace 字符串保存；Console 只显示异常摘要，不显示堆栈。
-
-## 运行
+## 快速开始
 
 需要 Python {{ python_version }} 和 uv。
 
-    uv sync --all-groups
-    uv run {{ package_name }} analysis --config config.json
-    uv run {{ package_name }} analysis --config config.json --dry-run
+```bash
+uv sync --all-groups
+
+# 运行两个示例业务
+uv run {{ package_name }} analysis --config analysis.cfg
+uv run {{ package_name }} comparison --config comparison.cfg
+
+# 启动本地报告中心
+uv run {{ package_name }} http --config app.cfg
+```
+
+浏览器访问 http://127.0.0.1:8000。HTTP 服务默认只监听本机地址。
+
+## 架构
+
+- `cli/`：命令入口、配置加载和执行编排。
+- `core/`：业务模型和 workflow；不依赖外部接口或文件布局。
+- `report/`：业务专属报告生成、元数据契约和共享前端。
+- `store/`：Workspace、路径安全、文件读写和 Run Manifest。
+- `http/`：可选 FastAPI 本地服务，提供报告页面和 API。
+
+不预建 Runtime、Bootstrap、Ports、Adapters、通用 Task 框架或 Worker。多 Group 并发由 CLI 使用 ThreadPoolExecutor；进程池按实际业务需求引入。
+
+## Workspace 结构
+
+`app.cfg` 中的 `workpath` 是应用工作空间。模板只创建三个公共入口：
+
+```text
+workpath/
+├── .app/          # workspace.json、runs/<run_id>/manifest.json 和日志
+├── shared/        # 跨业务共享数据；内部结构自由
+└── businesses/    # 每个业务独立的命名空间
+    ├── analysis/
+    │   └── business.json
+    └── comparison/
+        └── business.json
+```
+
+每个 Business 根目录必须提供 `business.json`。它声明 Business 信息、平级 Groups 以及各 Group Manifest 的相对路径。Group Manifest 声明运行历史、latest successful Run、报告入口和 Dataset。
+
+业务内部目录由业务自己规划。公共 Store 和 HTTP 不假设存在 `data/`、`reports/`、`cache/` 等目录。所有对外产物通过 Manifest 声明，路径必须是相对于 Business 根目录的安全 POSIX 相对路径。
+
+Business ID、Group ID 用于稳定标识；Label 只用于展示。不同 Business 可以有相同 Label。Run ID 是一次执行的唯一标识，不是报告导航层级。
+
+## 配置
+
+- `app.cfg`：全局 workpath 和 HTTP 配置。
+- `analysis.cfg`、`comparison.cfg`：业务参数和 Group 列表。
+
+业务命令默认读取 `app.cfg`，可通过 `--app-config` 和 `--workpath` 覆盖。HTTP 命令使用 `--config` 或 `-cfg` 指定全局配置。
+
+## 二次分析
+
+报告前端可以执行筛选、排序和轻量统计。需要 Python 业务逻辑的二次分析通过 HTTP API 调用 Core。示例 Analysis 业务提供阈值二次分析，并将结果作为新的 Run 保存；失败运行不会覆盖 latest successful Run。
 
 ## 检查
 
-    uv run ruff check .
-    uv run ruff format --check .
-    uv run pytest
-
-## 扩展
-
-增加 Workflow 时，分别定义 Core Workflow Input、Workflow 和 CLI Config Schema/Loader/Mapper。Task 由 Workflow 显式组合。需要数据库或消息系统时，在 core/ports 定义最小契约，在 infrastructure 实现适配器，并由 runtime/bootstrap.py 注入。不要为了未来可能性预先引入 Kafka、Web 框架、Registry 或 DAG Engine。
+```bash
+uv run ruff check .
+uv run ruff format --check .
+uv run pytest
+```

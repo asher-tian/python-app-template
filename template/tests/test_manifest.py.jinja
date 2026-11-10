@@ -1,45 +1,37 @@
 import json
 
-from {{ package_name }}.infrastructure.manifest import RunManifest
+from {{ package_name }}.store.manifest import RunManifest, redact_secrets
+from {{ package_name }}.store.workspace import Workspace
 
 
-def test_manifest_records_effective_config_environment_and_execution_status(tmp_path):
+def test_run_manifest_records_environment_outcomes_and_redacts_secrets(tmp_path):
+    workspace = Workspace(tmp_path / "work")
+    workspace.initialize()
+    run_dir = workspace.run_dir("run-1")
+    run_dir.mkdir(parents=True)
     manifest = RunManifest(
-        path=tmp_path / "manifest.json",
+        workspace,
         run_id="run-1",
         command="analysis",
-        application_name="Demo",
-        application_version="0.1.0",
-        config_source="config.json",
+        business_id="analysis",
+        config_source="analysis.cfg",
         effective_config={
-            "workpath": "/workspace",
-            "api_token": "do-not-save",
-            "groups": [{"label": "alpha", "enabled": True}],
+            "groups": [{"label": "alpha", "api_token": "private"}],
+            "password": "hidden",
         },
     )
     manifest.finish(
-        [
-            {
-                "execution_id": "0001",
-                "workflow_name": "analysis",
-                "success": True,
-                "metadata": {"label": "alpha"},
-            },
-            {
-                "execution_id": "0002",
-                "workflow_name": "analysis",
-                "success": False,
-                "metadata": {"label": "beta"},
-                "error": "ValueError: failed",
-            },
-        ],
-        "failed",
+        [{"business_id": "analysis", "group_id": "alpha", "status": "success"}],
+        "success",
     )
 
-    data = json.loads((tmp_path / "manifest.json").read_text(encoding="utf-8"))
-    assert data["run"]["status"] == "failed"
-    assert data["run"]["finished_at"] is not None
-    assert data["configuration"]["effective_config"]["api_token"] == "[REDACTED]"
-    assert data["executions"][0]["log_file"] == "workflows/analysis_0001.jsonl"
-    assert data["executions"][1]["status"] == "failed"
-    assert data["environment"]["python_implementation"]
+    data = json.loads(
+        (workspace.app_dir / "runs" / "run-1" / "manifest.json").read_text(encoding="utf-8")
+    )
+    assert data["run"]["status"] == "success"
+    assert data["groups"][0]["group_id"] == "alpha"
+    assert data["configuration"]["effective_config"]["password"] == "[REDACTED]"
+    assert data["configuration"]["effective_config"]["groups"][0]["api_token"] == "[REDACTED]"
+    assert redact_secrets({"nested": [{"secret": "x"}]}) == {
+        "nested": [{"secret": "[REDACTED]"}]
+    }

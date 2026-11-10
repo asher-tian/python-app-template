@@ -1,12 +1,29 @@
-from {{ package_name }}.interfaces.cli.parser import build_parser
+from {{ package_name }}.cli.parser import build_parser
 
 
-def test_analysis_parser_accepts_config():
-    args = build_parser().parse_args(["analysis", "--config", "custom.json", "--dry-run"])
+def test_business_commands_accept_business_and_app_config():
+    args = build_parser().parse_args([
+        "analysis",
+        "--config",
+        "analysis.cfg",
+        "--app-config",
+        "app.cfg",
+        "--workpath",
+        "./tmp-workspace",
+    ])
     assert args.command == "analysis"
-    assert str(args.config) == "custom.json"
-    assert args.dry_run is True
+    assert str(args.config) == "analysis.cfg"
+    assert str(args.app_config) == "app.cfg"
+    assert str(args.workpath) == "tmp-workspace"
 
 
-def test_version_parser_is_available():
-    assert build_parser().prog == "{{ project_slug }}"
+def test_http_accepts_cfg_alias():
+    args = build_parser().parse_args(["http", "-cfg", "custom.cfg", "--no-open"])
+    assert args.command == "http"
+    assert str(args.config) == "custom.cfg"
+    assert args.no_open is True
+
+
+def test_comparison_command_is_available():
+    args = build_parser().parse_args(["comparison", "--config", "comparison.cfg"])
+    assert args.command == "comparison"

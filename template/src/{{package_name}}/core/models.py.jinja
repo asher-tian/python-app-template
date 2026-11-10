@@ -1,0 +1,10 @@
+"""Shared, framework-independent business value types."""
+
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class GroupIdentity:
+    business_id: str
+    group_id: str
+    label: str

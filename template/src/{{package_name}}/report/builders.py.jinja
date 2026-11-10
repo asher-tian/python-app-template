@@ -1,0 +1,168 @@
+"""Business-owned report builders and artifact layouts."""
+
+from __future__ import annotations
+
+from datetime import UTC, datetime
+from html import escape
+
+from {{ package_name }}.core.workflows.analysis import AnalysisResult
+from {{ package_name }}.core.workflows.comparison import ComparisonResult
+from {{ package_name }}.report.models import DatasetReference, ReportReference, RunRecord
+from {{ package_name }}.store.files import write_json, write_text
+from {{ package_name }}.store.workspace import Workspace
+
+
+def _report_page(
+    *,
+    title: str,
+    business_id: str,
+    group_id: str,
+    report_kind: str,
+) -> str:
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{escape(title)}</title>
+  <link rel="stylesheet" href="/assets/style.css">
+  <script src="/assets/report.js" defer></script>
+</head>
+<body>
+  <header><a href="/">Report Home</a></header>
+  <main id="app" data-page="report"
+        data-business-id="{escape(business_id)}"
+        data-group-id="{escape(group_id)}"
+        data-report-kind="{escape(report_kind)}">
+    <p>Loading report…</p>
+  </main>
+</body>
+</html>
+"""
+
+
+def build_analysis_report(
+    *,
+    workspace: Workspace,
+    business_id: str,
+    group_id: str,
+    label: str,
+    run_id: str,
+    result: AnalysisResult,
+) -> RunRecord:
+    root = workspace.business_dir(business_id)
+    records_path = f"analysis/datasets/{group_id}/{run_id}/records.json"
+    summary_path = f"analysis/datasets/{group_id}/{run_id}/summary.json"
+    report_path = f"analysis/reports/{group_id}/{run_id}/index.html"
+
+    summary = {
+        "item_count": result.item_count,
+        "threshold": result.threshold,
+        "total": result.total,
+    }
+    write_json(root, records_path, {"records": result.records})
+    write_json(root, summary_path, summary)
+    write_text(
+        root,
+        report_path,
+        _report_page(
+            title=f"Analysis - {label}",
+            business_id=business_id,
+            group_id=group_id,
+            report_kind="analysis",
+        ),
+    )
+    return RunRecord(
+        run_id=run_id,
+        created_at=datetime.now(UTC).isoformat(),
+        status="success",
+        report=ReportReference(entry=report_path),
+        datasets=[
+            DatasetReference(id="records", title="Analysis records", path=records_path),
+            DatasetReference(id="summary", title="Summary", path=summary_path),
+        ],
+        summary=summary,
+    )
+
+
+def build_analysis_reanalysis_report(
+    *,
+    workspace: Workspace,
+    business_id: str,
+    group_id: str,
+    label: str,
+    run_id: str,
+    records: list[dict[str, int]],
+    result: dict[str, int],
+) -> RunRecord:
+    root = workspace.business_dir(business_id)
+    records_path = f"analysis/derived/{group_id}/{run_id}/records.json"
+    result_path = f"analysis/derived/{group_id}/{run_id}/reanalysis.json"
+    report_path = f"analysis/reports/{group_id}/{run_id}/index.html"
+    write_json(root, records_path, {"records": records})
+    write_json(root, result_path, result)
+    write_text(
+        root,
+        report_path,
+        _report_page(
+            title=f"Analysis - {label}",
+            business_id=business_id,
+            group_id=group_id,
+            report_kind="analysis",
+        ),
+    )
+    return RunRecord(
+        run_id=run_id,
+        created_at=datetime.now(UTC).isoformat(),
+        status="success",
+        report=ReportReference(entry=report_path),
+        datasets=[
+            DatasetReference(id="records", title="Analysis records", path=records_path),
+            DatasetReference(id="reanalysis", title="Secondary analysis", path=result_path),
+        ],
+        summary=result,
+    )
+
+
+def build_comparison_report(
+    *,
+    workspace: Workspace,
+    business_id: str,
+    group_id: str,
+    label: str,
+    run_id: str,
+    result: ComparisonResult,
+) -> RunRecord:
+    root = workspace.business_dir(business_id)
+    records_path = f"comparison/exports/{group_id}/{run_id}/comparison.json"
+    summary_path = f"comparison/exports/{group_id}/{run_id}/summary.json"
+    report_path = f"comparison/views/{group_id}/{run_id}/index.html"
+
+    summary = {
+        "item_count": result.item_count,
+        "left_total": result.left_total,
+        "right_total": result.right_total,
+    }
+    write_json(root, records_path, {"records": result.records})
+    write_json(root, summary_path, summary)
+    write_text(
+        root,
+        report_path,
+        _report_page(
+            title=f"Comparison - {label}",
+            business_id=business_id,
+            group_id=group_id,
+            report_kind="comparison",
+        ),
+    )
+    return RunRecord(
+        run_id=run_id,
+        created_at=datetime.now(UTC).isoformat(),
+        status="success",
+        report=ReportReference(entry=report_path),
+        datasets=[
+            DatasetReference(id="records", title="Comparison records", path=records_path),
+            DatasetReference(id="summary", title="Comparison summary", path=summary_path),
+        ],
+        summary=summary,
+    )

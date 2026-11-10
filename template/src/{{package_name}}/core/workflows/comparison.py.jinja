@@ -1,0 +1,37 @@
+"""A second sample business with a different result shape."""
+
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class ComparisonInput:
+    group_id: str
+    label: str
+    item_count: int
+    threshold: int = 0
+
+
+@dataclass(frozen=True)
+class ComparisonResult:
+    group_id: str
+    label: str
+    item_count: int
+    left_total: int
+    right_total: int
+    records: list[dict[str, int]]
+
+
+def run_comparison(request: ComparisonInput) -> ComparisonResult:
+    records = [
+        {"index": index, "left": index, "right": index * 2}
+        for index in range(1, request.item_count + 1)
+    ]
+    selected = [item for item in records if item["index"] >= request.threshold]
+    return ComparisonResult(
+        group_id=request.group_id,
+        label=request.label,
+        item_count=len(records),
+        left_total=sum(item["left"] for item in selected),
+        right_total=sum(item["right"] for item in selected),
+        records=records,
+    )

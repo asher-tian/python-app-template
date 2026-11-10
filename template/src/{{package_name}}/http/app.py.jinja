@@ -1,0 +1,166 @@
+"""FastAPI application for local report discovery and secondary analysis."""
+
+from __future__ import annotations
+
+import json
+import uuid
+from pathlib import Path
+
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, ConfigDict, Field
+
+from {{ package_name }}.core.workflows.analysis import reanalyze_records
+from {{ package_name }}.report.builders import build_analysis_reanalysis_report
+from {{ package_name }}.report.catalog import ReportCatalog
+from {{ package_name }}.report.metadata import record_group_run
+from {{ package_name }}.store.manifest import RunManifest
+from {{ package_name }}.store.workspace import Workspace
+
+
+_FRONTEND = Path(__file__).resolve().parents[1] / "report" / "frontend"
+
+
+class ReanalysisRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    threshold: int = Field(default=0, ge=0)
+
+
+def create_app(workpath: Path) -> FastAPI:
+    workspace = Workspace(workpath)
+    workspace.initialize()
+    catalog = ReportCatalog(workspace)
+    app = FastAPI(title="Local Report Server")
+    app.state.workspace = workspace
+    app.state.catalog = catalog
+    app.mount("/assets", StaticFiles(directory=_FRONTEND), name="assets")
+
+    def not_found(exc: Exception) -> HTTPException:
+        return HTTPException(status_code=404, detail=str(exc))
+
+    @app.get("/")
+    def home() -> FileResponse:
+        return FileResponse(_FRONTEND / "index.html")
+
+    @app.get("/api/businesses")
+    def list_businesses() -> list[dict]:
+        try:
+            return [item.model_dump(mode="json") for item in catalog.list_businesses()]
+        except (ValueError, json.JSONDecodeError) as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    @app.get("/api/businesses/{business_id}/groups")
+    def list_groups(business_id: str) -> list[dict]:
+        try:
+            business = catalog.business(business_id)
+            return [item.model_dump(mode="json") for item in business.groups]
+        except (FileNotFoundError, ValueError, json.JSONDecodeError) as exc:
+            raise not_found(exc) from exc
+
+    @app.get("/api/businesses/{business_id}/groups/{group_id}")
+    def get_group(business_id: str, group_id: str) -> dict:
+        try:
+            _, business, _, group = catalog.group_context(business_id, group_id)
+            latest = catalog.latest_run(group)
+            return {
+                "business": business.model_dump(mode="json"),
+                "group": group.model_dump(mode="json"),
+                "latest_run": latest.model_dump(mode="json"),
+            }
+        except (FileNotFoundError, ValueError, json.JSONDecodeError) as exc:
+            raise not_found(exc) from exc
+
+    @app.get("/api/businesses/{business_id}/groups/{group_id}/datasets/{dataset_id}")
+    def get_dataset(business_id: str, group_id: str, dataset_id: str, run_id: str | None = None):
+        try:
+            return catalog.dataset(business_id, group_id, dataset_id, run_id)
+        except (FileNotFoundError, ValueError, json.JSONDecodeError) as exc:
+            raise not_found(exc) from exc
+
+    @app.get("/businesses/{business_id}/groups/{group_id}")
+    def report_page(business_id: str, group_id: str) -> FileResponse:
+        try:
+            return FileResponse(catalog.report_path(business_id, group_id))
+        except (FileNotFoundError, ValueError, json.JSONDecodeError) as exc:
+            raise not_found(exc) from exc
+
+    @app.get("/businesses/{business_id}/groups/{group_id}/runs/{run_id}")
+    def historical_report_page(business_id: str, group_id: str, run_id: str) -> FileResponse:
+        try:
+            return FileResponse(catalog.report_path(business_id, group_id, run_id))
+        except (FileNotFoundError, ValueError, json.JSONDecodeError) as exc:
+            raise not_found(exc) from exc
+
+    @app.post("/api/businesses/{business_id}/groups/{group_id}/analysis")
+    def secondary_analysis(
+        business_id: str,
+        group_id: str,
+        request: ReanalysisRequest,
+    ) -> dict:
+        if business_id != "analysis":
+            raise HTTPException(
+                status_code=409,
+                detail=f"Business {business_id!r} does not expose this analysis operation",
+            )
+        try:
+            _, business, group_reference, group = catalog.group_context(
+                business_id,
+                group_id,
+            )
+            source_run = catalog.latest_run(group)
+            source = catalog.dataset(business_id, group_id, "records", source_run.run_id)
+            records = source["records"]
+            result = reanalyze_records(records, request.threshold)
+
+            run_id = uuid.uuid4().hex[:12]
+            run_dir = workspace.run_dir(run_id)
+            run_dir.mkdir(parents=True, exist_ok=False)
+            run_manifest = RunManifest(
+                workspace,
+                run_id=run_id,
+                command="http.analysis",
+                business_id=business_id,
+                config_source="HTTP request",
+                effective_config={
+                    "business_id": business_id,
+                    "group_id": group_id,
+                    "source_run_id": source_run.run_id,
+                    "threshold": request.threshold,
+                },
+            )
+            record = build_analysis_reanalysis_report(
+                workspace=workspace,
+                business_id=business_id,
+                group_id=group_id,
+                label=group.label,
+                run_id=run_id,
+                records=records,
+                result=result,
+            )
+            record_group_run(
+                workspace=workspace,
+                business_id=business_id,
+                business_name=business.name,
+                business_description=business.description,
+                group_id=group_id,
+                group_label=group.label,
+                group_manifest_path=group_reference.manifest,
+                run=record,
+            )
+            run_manifest.finish(
+                [{
+                    "business_id": business_id,
+                    "group_id": group_id,
+                    "source_run_id": source_run.run_id,
+                    "status": "success",
+                    "summary": result,
+                }],
+                "success",
+            )
+            return record.model_dump(mode="json")
+        except (FileNotFoundError, ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
+            raise not_found(exc) from exc
+
+    return app

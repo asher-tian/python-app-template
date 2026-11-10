@@ -1,0 +1,100 @@
+"""Load and validate global and business TOML configuration."""
+
+from __future__ import annotations
+
+import re
+import tomllib
+from pathlib import Path
+
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
+
+
+_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
+
+
+class AppSection(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    workpath: Path = Path("./workspace")
+
+
+class HttpSection(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    host: str = "127.0.0.1"
+    port: int = Field(default=8000, ge=1, le=65535)
+    auto_open: bool = True
+
+
+class AppConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    app: AppSection = Field(default_factory=AppSection)
+    http: HttpSection = Field(default_factory=HttpSection)
+
+
+class BusinessSection(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(pattern=_ID_PATTERN.pattern)
+    name: str = Field(min_length=1)
+    description: str = ""
+
+
+class GroupConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    id: str | None = Field(default=None, pattern=_ID_PATTERN.pattern)
+    label: str = Field(min_length=1)
+    item_count: int = Field(default=100, ge=0)
+    threshold: int = Field(default=0, ge=0)
+
+
+class BusinessConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    business: BusinessSection
+    groups: list[GroupConfig] = Field(min_length=1)
+
+
+def _read_toml(path: Path) -> dict:
+    try:
+        return tomllib.loads(path.read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError) as exc:
+        raise ValueError(f"Cannot load TOML configuration {path}: {exc}") from exc
+
+
+def load_app_config(path: Path) -> AppConfig:
+    try:
+        config = AppConfig.model_validate(_read_toml(path))
+    except ValidationError as exc:
+        raise ValueError(f"Application configuration validation failed:\n{exc}") from exc
+
+    workpath = config.app.workpath.expanduser()
+    if not workpath.is_absolute():
+        workpath = path.resolve().parent / workpath
+    app_section = config.app.model_copy(update={"workpath": workpath.resolve()})
+    return config.model_copy(update={"app": app_section})
+
+
+def group_id_for(group: GroupConfig) -> str:
+    if group.id:
+        return group.id
+    slug = re.sub(r"[^a-z0-9_-]+", "-", group.label.lower()).strip("-_")
+    if not slug:
+        raise ValueError(f"Group label cannot produce a safe ID: {group.label!r}")
+    if not _ID_PATTERN.fullmatch(slug):
+        raise ValueError(f"Invalid Group ID derived from label: {group.label!r}")
+    return slug
+
+
+def load_business_config(path: Path) -> BusinessConfig:
+    try:
+        config = BusinessConfig.model_validate(_read_toml(path))
+    except ValidationError as exc:
+        raise ValueError(f"Business configuration validation failed:\n{exc}") from exc
+
+    group_ids = [group_id_for(group) for group in config.groups]
+    if len(group_ids) != len(set(group_ids)):
+        raise ValueError("Group IDs must be unique within a Business")
+    return config

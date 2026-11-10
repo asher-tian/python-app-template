@@ -1,0 +1,59 @@
+"""Start the optional local report HTTP server."""
+
+from __future__ import annotations
+
+import ipaddress
+import logging
+import threading
+import webbrowser
+from pathlib import Path
+
+import uvicorn
+
+from {{ package_name }}.cli.config import load_app_config
+from {{ package_name }}.http.app import create_app
+
+
+def _require_loopback(host: str) -> None:
+    if host == "localhost":
+        return
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError as exc:
+        raise ValueError("HTTP host must be localhost or a loopback IP address") from exc
+    if not address.is_loopback:
+        raise ValueError("HTTP server is restricted to loopback addresses")
+
+
+def execute(
+    config_path: Path,
+    *,
+    workpath: Path | None = None,
+    host: str | None = None,
+    port: int | None = None,
+    open_browser: bool = True,
+) -> int:
+    config = load_app_config(config_path)
+    selected_host = host or config.http.host
+    selected_port = port or config.http.port
+    selected_workpath = workpath.expanduser().resolve() if workpath else config.app.workpath
+    _require_loopback(selected_host)
+    if not 1 <= selected_port <= 65535:
+        raise ValueError("HTTP port must be between 1 and 65535")
+
+    url_host = "127.0.0.1" if selected_host == "localhost" else selected_host
+    url = f"http://{url_host}:{selected_port}/"
+    should_open = open_browser and config.http.auto_open
+    if should_open:
+        threading.Timer(1.0, webbrowser.open, args=(url,)).start()
+
+    logging.getLogger("{{ package_name }}").info(
+        "Serving workspace %s at %s", selected_workpath, url
+    )
+    uvicorn.run(
+        create_app(selected_workpath),
+        host=selected_host,
+        port=selected_port,
+        log_level="info",
+    )
+    return 0
