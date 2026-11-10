@@ -42,6 +42,10 @@ jobs:
         working-directory: generated
         run: uv run ruff check .
 
+      - name: Format generated project
+        working-directory: generated
+        run: uv run ruff format .
+
       - name: Check formatting
         working-directory: generated
         run: uv run ruff format --check .
