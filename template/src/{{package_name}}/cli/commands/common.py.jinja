@@ -16,7 +16,7 @@ from {{ package_name }}.cli.config import (
     load_app_config,
     load_business_config,
 )
-from {{ package_name }}.cli.logging import RunLogging
+from {{ package_name }}.store.logging import RunLogging
 from {{ package_name }}.report.models import GroupRunResult
 from {{ package_name }}.store.run_record import RunRecordStore
 from {{ package_name }}.store.workspace import Workspace
