@@ -1,5 +1,7 @@
+import pytest
 from fastapi.testclient import TestClient
 
+from {{ package_name }}.cli.commands.http import _require_loopback
 from {{ package_name }}.cli.commands.analysis import execute as execute_analysis
 from {{ package_name }}.cli.commands.comparison import execute as execute_comparison
 from {{ package_name }}.http.app import create_app
@@ -101,3 +103,13 @@ def test_http_does_not_expose_undeclared_workspace_files(tmp_path):
     assert response.status_code == 404
     traversal = client.get("/businesses/analysis/groups/alpha/../../../../etc/passwd")
     assert traversal.status_code in (404, 405)
+
+
+
+def test_http_host_is_loopback_only_and_ipv6_url_is_bracketed():
+    assert _require_loopback("localhost") == "127.0.0.1"
+    assert _require_loopback("127.0.0.1") == "127.0.0.1"
+    assert _require_loopback("::1") == "[::1]"
+
+    with pytest.raises(ValueError, match="loopback"):
+        _require_loopback("0.0.0.0")
