@@ -8,6 +8,20 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 
+class ContextFilter(logging.Filter):
+    """Add stable Run and Group context to every structured log record."""
+
+    def __init__(self, context: dict[str, str]) -> None:
+        super().__init__()
+        self.context = context
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        for key, value in self.context.items():
+            if not hasattr(record, key):
+                setattr(record, key, value)
+        return True
+
+
 class JsonLineFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         payload: dict[str, object] = {
@@ -19,6 +33,9 @@ class JsonLineFormatter(logging.Formatter):
             "command": getattr(record, "command", None),
             "business_id": getattr(record, "business_id", None),
             "group_id": getattr(record, "group_id", None),
+            "source": record.pathname,
+            "line": record.lineno,
+            "function": record.funcName,
         }
         if record.exc_info:
             exception_type, exception_value, _ = record.exc_info
@@ -44,17 +61,29 @@ class RunLogging:
         self._handlers: list[logging.Handler] = []
         self._loggers: list[logging.Logger] = []
         self._context = {"command": command, "run_id": run_id}
-        logs_dir = run_dir / "logs"
-        (logs_dir / "groups").mkdir(parents=True, exist_ok=True)
+        self._logs_dir = run_dir / "logs"
+        (self._logs_dir / "groups").mkdir(parents=True, exist_ok=True)
         self.run_logger = self._create_logger(
             f"{{ package_name }}.run.{run_id}",
-            logs_dir / "run.jsonl",
+            self._logs_dir / "run.jsonl",
+            context=self._context,
             console=True,
         )
 
-    def _create_logger(self, name: str, path: Path, *, console: bool = False) -> logging.Logger:
+    def _create_logger(
+        self,
+        name: str,
+        path: Path,
+        *,
+        context: dict[str, str],
+        console: bool = False,
+    ) -> logging.Logger:
         logger = logging.getLogger(name)
-        logger.handlers.clear()
+        for existing_handler in logger.handlers[:]:
+            logger.removeHandler(existing_handler)
+            existing_handler.close()
+        logger.filters.clear()
+        logger.addFilter(ContextFilter(context))
         logger.setLevel(logging.DEBUG)
         logger.propagate = False
 
@@ -75,16 +104,21 @@ class RunLogging:
         return logger
 
     def group_logger(self, group_id: str, business_id: str) -> logging.Logger:
-        path = self._handlers[0].baseFilename
-        group_dir = Path(path).parent / "groups"
         return self._create_logger(
             f"{{ package_name }}.group.{self._context['run_id']}.{group_id}",
-            group_dir / f"{business_id}_{group_id}.jsonl",
+            self._logs_dir / "groups" / f"{business_id}_{group_id}.jsonl",
+            context={
+                **self._context,
+                "business_id": business_id,
+                "group_id": group_id,
+            },
+            console=True,
         )
 
     def close(self) -> None:
         for logger in self._loggers:
             logger.handlers.clear()
+            logger.filters.clear()
         for handler in self._handlers:
             handler.close()
         self._handlers.clear()
