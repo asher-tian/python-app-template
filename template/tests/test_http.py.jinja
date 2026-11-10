@@ -70,6 +70,17 @@ def test_http_discovers_from_run_records_and_persists_secondary_analysis(tmp_pat
     assert response.json()["summary"]["selected_count"] == 2
     assert response.json()["run_id"]
     assert response.json()["source_run_id"] == analysis_group["latest_run"]["run_id"]
+    http_run_dir = (
+        tmp_path
+        / "workspace"
+        / "run-data"
+        / "history"
+        / response.json()["run_id"]
+    )
+    assert (http_run_dir / "logs" / "run.log").is_file()
+    assert (
+        http_run_dir / "logs" / "groups" / "analysis_alpha.jsonl"
+    ).is_file()
 
     updated = client.get("/api/businesses/analysis/groups/alpha").json()
     assert updated["latest_run"]["run_id"] == response.json()["run_id"]
