@@ -12,18 +12,23 @@ from {{ package_name }}.store.workspace import Workspace
 
 
 def _run(run_id: str, status: str = "success") -> RunRecord:
-    return RunRecord(
-        run_id=run_id,
-        created_at="2026-01-01T00:00:00Z",
-        status=status,
-        report=ReportReference(entry=f"custom/report/{run_id}/index.html") if status == "success" else None,
-        datasets=[
+    report = None
+    datasets = []
+    if status == "success":
+        report = ReportReference(entry=f"custom/report/{run_id}/index.html")
+        datasets = [
             DatasetReference(
                 id="summary",
                 title="Summary",
                 path=f"custom/data/{run_id}.json",
             )
-        ] if status == "success" else [],
+        ]
+    return RunRecord(
+        run_id=run_id,
+        created_at="2026-01-01T00:00:00Z",
+        status=status,
+        report=report,
+        datasets=datasets,
     )
 
 

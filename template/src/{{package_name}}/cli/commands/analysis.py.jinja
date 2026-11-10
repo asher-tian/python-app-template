@@ -3,7 +3,7 @@
 from pathlib import Path
 
 from {{ package_name }}.cli.commands.common import execute_business
-from {{ package_name }}.cli.config import GroupConfig, group_id_for
+from {{ package_name }}.cli.config import GroupConfig
 from {{ package_name }}.core.workflows.analysis import AnalysisInput, run_analysis
 from {{ package_name }}.report.builders import build_analysis_report
 
