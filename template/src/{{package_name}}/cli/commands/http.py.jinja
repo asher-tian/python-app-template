@@ -14,15 +14,18 @@ from {{ package_name }}.cli.config import load_app_config
 from {{ package_name }}.http.app import create_app
 
 
-def _require_loopback(host: str) -> None:
+def _require_loopback(host: str) -> str:
     if host == "localhost":
-        return
+        return "127.0.0.1"
     try:
         address = ipaddress.ip_address(host)
     except ValueError as exc:
         raise ValueError("HTTP host must be localhost or a loopback IP address") from exc
     if not address.is_loopback:
         raise ValueError("HTTP server is restricted to loopback addresses")
+    if address.version == 6:
+        return f"[{address.compressed}]"
+    return address.compressed
 
 
 def execute(
@@ -35,13 +38,12 @@ def execute(
 ) -> int:
     config = load_app_config(config_path)
     selected_host = host or config.http.host
-    selected_port = port or config.http.port
+    selected_port = config.http.port if port is None else port
     selected_workpath = workpath.expanduser().resolve() if workpath else config.app.workpath
-    _require_loopback(selected_host)
+    url_host = _require_loopback(selected_host)
     if not 1 <= selected_port <= 65535:
         raise ValueError("HTTP port must be between 1 and 65535")
 
-    url_host = "127.0.0.1" if selected_host == "localhost" else selected_host
     url = f"http://{url_host}:{selected_port}/"
     should_open = open_browser and config.http.auto_open
     if should_open:
