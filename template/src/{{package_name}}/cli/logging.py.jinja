@@ -1,4 +1,4 @@
-"""Run-scoped JSONL logging with concise console output."""
+"""Run-scoped text and JSONL logging with concise console output."""
 
 from __future__ import annotations
 
@@ -65,7 +65,7 @@ class RunLogging:
         (self._logs_dir / "groups").mkdir(parents=True, exist_ok=True)
         self.run_logger = self._create_logger(
             f"{{ package_name }}.run.{run_id}",
-            self._logs_dir / "run.jsonl",
+            self._logs_dir / "run",
             context=self._context,
             console=True,
         )
@@ -73,7 +73,7 @@ class RunLogging:
     def _create_logger(
         self,
         name: str,
-        path: Path,
+        file_prefix: Path,
         *,
         context: dict[str, str],
         console: bool = False,
@@ -87,11 +87,29 @@ class RunLogging:
         logger.setLevel(logging.DEBUG)
         logger.propagate = False
 
-        file_handler = logging.FileHandler(path, encoding="utf-8")
-        file_handler.setLevel(logging.DEBUG)
-        file_handler.setFormatter(JsonLineFormatter())
-        logger.addHandler(file_handler)
-        self._handlers.append(file_handler)
+        text_handler = logging.FileHandler(
+            file_prefix.with_suffix(".log"),
+            encoding="utf-8",
+        )
+        text_handler.setLevel(logging.DEBUG)
+        text_handler.setFormatter(
+            logging.Formatter(
+                "%(asctime)s %(levelname)s %(name)s "
+                "[%(pathname)s:%(lineno)d] %(message)s",
+                datefmt="%Y-%m-%dT%H:%M:%S",
+            )
+        )
+        logger.addHandler(text_handler)
+        self._handlers.append(text_handler)
+
+        jsonl_handler = logging.FileHandler(
+            file_prefix.with_suffix(".jsonl"),
+            encoding="utf-8",
+        )
+        jsonl_handler.setLevel(logging.DEBUG)
+        jsonl_handler.setFormatter(JsonLineFormatter())
+        logger.addHandler(jsonl_handler)
+        self._handlers.append(jsonl_handler)
 
         if console:
             console_handler = logging.StreamHandler()
@@ -106,7 +124,7 @@ class RunLogging:
     def group_logger(self, group_id: str, business_id: str) -> logging.Logger:
         return self._create_logger(
             f"{{ package_name }}.group.{self._context['run_id']}.{group_id}",
-            self._logs_dir / "groups" / f"{business_id}_{group_id}.jsonl",
+            self._logs_dir / "groups" / f"{business_id}_{group_id}",
             context={
                 **self._context,
                 "business_id": business_id,
