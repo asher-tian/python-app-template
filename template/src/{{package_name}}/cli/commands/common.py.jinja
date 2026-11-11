@@ -1,0 +1,193 @@
+"""Shared CLI orchestration for independent Business Groups."""
+
+from __future__ import annotations
+
+import logging
+import uuid
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
+from typing import Any
+
+from {{ package_name }}.cli.config import (
+    BusinessConfig,
+    GroupConfig,
+    group_id_for,
+    load_app_config,
+    load_business_config,
+)
+from {{ package_name }}.store.logging import RunLogging
+from {{ package_name }}.report.models import GroupRunResult
+from {{ package_name }}.store.run_record import RunRecordStore
+from {{ package_name }}.store.workspace import Workspace
+
+
+def execute_business(
+    *,
+    command: str,
+    expected_business_id: str,
+    config_path: Path,
+    app_config_path: Path,
+    workpath_override: Path | None,
+    workflow: Callable[[GroupConfig, str], Any],
+    report_builder: Callable[..., GroupRunResult],
+) -> int:
+    app_config = load_app_config(app_config_path)
+    business_config: BusinessConfig = load_business_config(config_path)
+    business = business_config.business
+    if business.id != expected_business_id:
+        raise ValueError(
+            f"Command {command!r} expects Business ID {expected_business_id!r}, "
+            f"got {business.id!r}"
+        )
+
+    workpath = (
+        workpath_override.expanduser().resolve()
+        if workpath_override
+        else app_config.app.workpath
+    )
+    workspace = Workspace(
+        workpath,
+        run_records_dir=app_config.workspace.run_records_dir,
+    )
+    workspace.initialize()
+    run_id = uuid.uuid4().hex[:12]
+    effective_config = {
+        "app": app_config.model_dump(mode="json"),
+        "business": business_config.model_dump(mode="json"),
+        "workpath": str(workpath),
+    }
+    run_record = RunRecordStore(
+        workspace,
+        run_id=run_id,
+        command=command,
+        business_id=business.id,
+        business_name=business.name,
+        business_description=business.description,
+        config_source=str(config_path.resolve()),
+        effective_config=effective_config,
+    )
+    logging_manager = RunLogging(run_record.run_dir, command=command, run_id=run_id)
+    run_logger = logging_manager.run_logger
+    run_logger.info(
+        "Run started; business=%s groups=%d",
+        business.id,
+        len(business_config.groups),
+        extra={"business_id": business.id},
+    )
+
+    outcomes: dict[str, GroupRunResult] = {}
+    try:
+        group_specs = [
+            (
+                group,
+                group_id_for(group),
+                logging_manager.group_logger(group_id_for(group), business.id),
+            )
+            for group in business_config.groups
+        ]
+        future_map = {}
+        with ThreadPoolExecutor(thread_name_prefix=f"{business.id}-group") as executor:
+            for group, group_id, group_logger in group_specs:
+                future = executor.submit(
+                    _execute_group,
+                    workspace=workspace,
+                    business_id=business.id,
+                    business_paths=business_config.paths,
+                    group=group,
+                    group_id=group_id,
+                    run_id=run_id,
+                    workflow=workflow,
+                    report_builder=report_builder,
+                    logger=group_logger,
+                )
+                future_map[future] = (group, group_id, group_logger)
+
+            for future in as_completed(future_map):
+                group, group_id, group_logger = future_map[future]
+                try:
+                    outcomes[group_id] = future.result()
+                except Exception as exc:
+                    group_logger.exception("Group execution failed")
+                    run_logger.error(
+                        "Group failed; business=%s group=%s error=%s: %s",
+                        business.id,
+                        group_id,
+                        type(exc).__name__,
+                        exc,
+                        extra={"business_id": business.id, "group_id": group_id},
+                    )
+                    outcomes[group_id] = GroupRunResult(
+                        group_id=group_id,
+                        label=group.label,
+                        status="failed",
+                        error=f"{type(exc).__name__}: {exc}",
+                    )
+                run_record.update_groups(
+                    [
+                        outcomes[item_group_id].model_dump(mode="json")
+                        for _, item_group_id, _ in group_specs
+                        if item_group_id in outcomes
+                    ]
+                )
+
+        ordered_outcomes = [
+            outcomes[group_id].model_dump(mode="json")
+            for _, group_id, _ in group_specs
+        ]
+        failed = sum(item["status"] != "success" for item in ordered_outcomes)
+        status = "failed" if failed else "success"
+        run_record.finish(ordered_outcomes, status)
+        run_logger.info(
+            "Run finished; business=%s total=%d failed=%d",
+            business.id,
+            len(ordered_outcomes),
+            failed,
+            extra={"business_id": business.id},
+        )
+        return 1 if failed else 0
+    except Exception as exc:
+        run_logger.exception("Command execution failed", extra={"business_id": business.id})
+        run_record.finish(
+            [item.model_dump(mode="json") for item in outcomes.values()],
+            "failed",
+            error=f"{type(exc).__name__}: {exc}",
+        )
+        raise
+    finally:
+        logging_manager.close()
+
+
+def _execute_group(
+    *,
+    workspace: Workspace,
+    business_id: str,
+    business_paths: dict[str, str],
+    group: GroupConfig,
+    group_id: str,
+    run_id: str,
+    workflow: Callable[[GroupConfig, str], Any],
+    report_builder: Callable[..., GroupRunResult],
+    logger: logging.Logger,
+) -> GroupRunResult:
+    logger.info(
+        "Group started; label=%s",
+        group.label,
+        extra={"business_id": business_id, "group_id": group_id},
+    )
+    result = workflow(group, group_id)
+    record = report_builder(
+        workspace=workspace,
+        business_paths=business_paths,
+        business_id=business_id,
+        group_id=group_id,
+        label=group.label,
+        run_id=run_id,
+        result=result,
+    )
+    logger.info(
+        "Group completed; label=%s",
+        group.label,
+        extra={"business_id": business_id, "group_id": group_id},
+    )
+    return record

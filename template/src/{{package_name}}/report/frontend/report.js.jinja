@@ -1,0 +1,133 @@
+(() => {
+  const root = document.getElementById("app");
+  if (!root) return;
+
+  const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (char) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+  })[char]);
+
+  async function request(url, options) {
+    const response = await fetch(url, options);
+    if (!response.ok) {
+      const message = await response.text();
+      throw new Error(message || response.statusText);
+    }
+    return response.json();
+  }
+
+  async function renderHome() {
+    const businesses = await request("/api/businesses");
+    root.innerHTML = "<h1>Businesses</h1><p class='muted'>Reports are grouped by Business, then by independent Group.</p>";
+    businesses.forEach((business) => {
+      const section = document.createElement("section");
+      section.className = "business";
+      const links = business.groups.map((group) => {
+        if (!group.latest_run_id) {
+          return "<span class='group-link muted'>" + escapeHtml(group.label) + " (no successful report)</span>";
+        }
+        return "<a class='group-link' href='/businesses/" +
+          encodeURIComponent(business.business_id) + "/groups/" +
+          encodeURIComponent(group.group_id) + "'>" +
+          escapeHtml(group.label) + "</a>";
+      }).join("");
+      section.innerHTML = "<h2>" + escapeHtml(business.name) + "</h2><p class='muted'>" +
+        escapeHtml(business.description || "") + "</p><div class='groups'>" + links + "</div>";
+      root.appendChild(section);
+    });
+    if (!businesses.length) root.innerHTML += "<p>No Run records with report output were found in this Workspace.</p>";
+  }
+
+  function renderDataset(dataset) {
+    if (dataset && Array.isArray(dataset.records) && dataset.records.length) {
+      const columns = Object.keys(dataset.records[0]);
+      const head = columns.map((key) => "<th>" + escapeHtml(key) + "</th>").join("");
+      const rows = dataset.records.slice(0, 100).map((record) =>
+        "<tr>" + columns.map((key) => "<td>" + escapeHtml(record[key]) + "</td>").join("") + "</tr>"
+      ).join("");
+      return "<div class='panel'><h2>Records</h2><p class='muted'>Showing " +
+        Math.min(dataset.records.length, 100) + " of " + dataset.records.length +
+        " records.</p><table><thead><tr>" + head +
+        "</tr></thead><tbody>" + rows + "</tbody></table></div>";
+    }
+    return "<div class='panel'><pre>" + escapeHtml(JSON.stringify(dataset, null, 2)) + "</pre></div>";
+  }
+
+  async function renderReport() {
+    const businessId = root.dataset.businessId;
+    const groupId = root.dataset.groupId;
+    const selectedRunId = root.dataset.runId || new URLSearchParams(window.location.search).get("run_id");
+    const base = "/api/businesses/" + encodeURIComponent(businessId) +
+      "/groups/" + encodeURIComponent(groupId);
+    const detailUrl = selectedRunId ? base + "?run_id=" + encodeURIComponent(selectedRunId) : base;
+    const detail = await request(detailUrl);
+    const group = detail.group;
+    const latest = detail.latest_run;
+    root.innerHTML = "<p><a href='/'>← All Businesses</a></p><h1>" +
+      escapeHtml(detail.business.name) + " / " + escapeHtml(group.label) +
+      "</h1><p class='muted'>Business ID: " + escapeHtml(businessId) +
+      " · Group ID: " + escapeHtml(groupId) + " · Run: " +
+      escapeHtml(latest.run_id) + "</p>";
+
+    const summary = document.createElement("section");
+    summary.className = "panel";
+    summary.innerHTML = "<h2>Summary</h2><pre>" +
+      escapeHtml(JSON.stringify(latest.summary, null, 2)) + "</pre>";
+    root.appendChild(summary);
+
+    const history = document.createElement("section");
+    history.className = "panel";
+    history.innerHTML = "<h2>Run History</h2><div class='groups'>" +
+      group.runs.map((run) => {
+        const label = escapeHtml(run.run_id + " · " + run.status);
+        if (run.status !== "success") return "<span class='group-link muted'>" + label + "</span>";
+        return "<a class='group-link' href='/businesses/" +
+          encodeURIComponent(businessId) + "/groups/" +
+          encodeURIComponent(groupId) + "/runs/" +
+          encodeURIComponent(run.run_id) + "'>" + label + "</a>";
+      }).join("") + "</div>";
+    root.appendChild(history);
+
+    for (const datasetRef of latest.datasets) {
+      const query = "?run_id=" + encodeURIComponent(latest.run_id);
+      const dataset = await request(
+        base + "/datasets/" + encodeURIComponent(datasetRef.id) + query
+      );
+      const section = document.createElement("section");
+      section.innerHTML = "<h2>" + escapeHtml(datasetRef.title) + "</h2>";
+      section.innerHTML += renderDataset(dataset);
+      root.appendChild(section);
+    }
+
+    if (businessId === "analysis" && latest.run_id === group.latest_run_id) {
+      const form = document.createElement("form");
+      form.className = "panel";
+      form.innerHTML = "<h2>Secondary Analysis</h2><label>Minimum value " +
+        "<input name='threshold' type='number' min='0' value='0'></label> " +
+        "<button type='submit'>Run analysis</button><p class='muted' id='analysis-status'></p>";
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const status = form.querySelector("#analysis-status");
+        const threshold = Number(new FormData(form).get("threshold") || 0);
+        status.textContent = "Running…";
+        try {
+          await request(base + "/analysis", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({threshold})
+          });
+          window.location.reload();
+        } catch (error) {
+          status.textContent = error.message;
+          status.className = "error";
+        }
+      });
+      root.appendChild(form);
+    }
+  }
+
+  const page = root.dataset.page;
+  const render = page === "report" ? renderReport : renderHome;
+  render().catch((error) => {
+    root.innerHTML = "<p class='error'>Unable to load report: " + escapeHtml(error.message) + "</p>";
+  });
+})();

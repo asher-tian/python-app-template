@@ -1,6 +1,0 @@
-"""Pure functions that can be reused and submitted to the process pool."""
-
-
-def sum_squares(values: tuple[int, ...]) -> int:
-    """Return the sum of squares. Kept at module scope for multiprocessing spawn."""
-    return sum(value * value for value in values)

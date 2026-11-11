@@ -1,0 +1,42 @@
+import pytest
+
+from {{ package_name }}.store.files import resolve_relative
+from {{ package_name }}.store.workspace import Workspace
+
+
+def test_workspace_only_resolves_paths_and_creates_its_root(tmp_path):
+    root = tmp_path / "work"
+    workspace = Workspace(root, run_records_dir="records/executions")
+    workspace.initialize()
+
+    assert root.is_dir()
+    assert workspace.run_records_root == root / "records" / "executions"
+    assert not (root / "workspace.json").exists()
+    assert not (root / ".app").exists()
+    assert not (root / "shared").exists()
+    assert not (root / "businesses").exists()
+
+
+def test_run_record_directory_uses_configured_location(tmp_path):
+    workspace = Workspace(tmp_path / "work", run_records_dir="custom/run-history")
+    assert workspace.run_dir("run-123") == (
+        tmp_path / "work" / "custom" / "run-history" / "run-123"
+    )
+    assert workspace.run_record_path("run-123") == "custom/run-history/run-123/run.json"
+
+
+@pytest.mark.parametrize("value", ["../escape", "/absolute", "a/../../b", "", "C:/outside"])
+def test_relative_path_rejects_unsafe_values(tmp_path, value):
+    with pytest.raises(ValueError):
+        resolve_relative(tmp_path, value)
+
+
+def test_relative_path_rejects_symlink_escape(tmp_path):
+    root = tmp_path / "workspace"
+    root.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (root / "link").symlink_to(outside, target_is_directory=True)
+
+    with pytest.raises(ValueError, match="escapes"):
+        resolve_relative(root, "link/file.json")

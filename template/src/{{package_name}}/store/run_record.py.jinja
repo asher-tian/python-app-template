@@ -1,0 +1,143 @@
+"""Per-run execution record: configuration, environment and group outcomes."""
+
+from __future__ import annotations
+
+import os
+import platform
+import sys
+from collections.abc import Mapping, Sequence
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any, Literal
+
+from pydantic import BaseModel, ConfigDict, Field
+
+from {{ package_name }}.store.files import write_json
+from {{ package_name }}.store.workspace import Workspace
+
+
+_SECRET_MARKERS = (
+    "password",
+    "passwd",
+    "token",
+    "secret",
+    "api_key",
+    "apikey",
+    "access_key",
+    "private_key",
+    "credential",
+)
+
+
+def redact_secrets(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return {
+            str(key): (
+                "[REDACTED]"
+                if any(
+                    marker in str(key).lower().replace("-", "_")
+                    for marker in _SECRET_MARKERS
+                )
+                else redact_secrets(item)
+            )
+            for key, item in value.items()
+        }
+    if isinstance(value, (list, tuple)):
+        return [redact_secrets(item) for item in value]
+    return value
+
+
+class RunRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal[1] = 1
+    run_id: str
+    command: str
+    business_id: str | None = None
+    business_name: str | None = None
+    business_description: str = ""
+    started_at: str
+    finished_at: str | None = None
+    status: Literal["running", "success", "failed"] = "running"
+    configuration: dict[str, Any]
+    environment: dict[str, Any]
+    groups: list[dict[str, Any]] = Field(default_factory=list)
+    error: str | None = None
+
+
+def collect_environment() -> dict[str, str]:
+    return {
+        "python_version": sys.version,
+        "python_implementation": sys.implementation.name,
+        "platform": platform.platform(),
+        "system": platform.system(),
+        "release": platform.release(),
+        "machine": platform.machine(),
+        "os_name": os.name,
+    }
+
+
+class RunRecordStore:
+    def __init__(
+        self,
+        workspace: Workspace,
+        *,
+        run_id: str,
+        command: str,
+        business_id: str | None,
+        business_name: str | None,
+        business_description: str = "",
+        config_source: str,
+        effective_config: dict[str, Any],
+    ) -> None:
+        self.workspace = workspace
+        self.relative_path = workspace.run_record_path(run_id)
+        workspace.run_dir(run_id).mkdir(parents=True, exist_ok=False)
+        self.record = RunRecord(
+            run_id=run_id,
+            command=command,
+            business_id=business_id,
+            business_name=business_name,
+            business_description=business_description,
+            started_at=datetime.now(UTC).isoformat(),
+            configuration={
+                "source": config_source,
+                "effective_config": redact_secrets(effective_config),
+            },
+            environment=collect_environment(),
+        )
+        self._write()
+
+    @property
+    def run_dir(self) -> Path:
+        return self.workspace.run_dir(self.record.run_id)
+
+    def update_groups(self, groups: Sequence[Mapping[str, Any]]) -> None:
+        self.record = self.record.model_copy(
+            update={"groups": [dict(group) for group in groups]}
+        )
+        self._write()
+
+    def finish(
+        self,
+        groups: Sequence[Mapping[str, Any]],
+        status: Literal["success", "failed"],
+        *,
+        error: str | None = None,
+    ) -> None:
+        self.record = self.record.model_copy(
+            update={
+                "groups": [dict(group) for group in groups],
+                "finished_at": datetime.now(UTC).isoformat(),
+                "status": status,
+                "error": error,
+            }
+        )
+        self._write()
+
+    def _write(self) -> None:
+        write_json(
+            self.workspace.root,
+            self.relative_path,
+            self.record.model_dump(mode="json"),
+        )

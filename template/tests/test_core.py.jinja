@@ -1,0 +1,25 @@
+from {{ package_name }}.core.workflows.analysis import (
+    AnalysisInput,
+    reanalyze_records,
+    run_analysis,
+)
+from {{ package_name }}.core.workflows.comparison import ComparisonInput, run_comparison
+
+
+def test_analysis_workflow_and_secondary_analysis():
+    result = run_analysis(AnalysisInput("alpha", "Alpha", 4, 2))
+    assert result.total == 30
+    assert len(result.records) == 4
+
+    secondary = reanalyze_records(result.records, 3)
+    assert secondary == {
+        "threshold": 3,
+        "selected_count": 2,
+        "selected_total": 25,
+    }
+
+
+def test_comparison_business_has_its_own_result_shape():
+    result = run_comparison(ComparisonInput("alpha", "Alpha", 3))
+    assert result.left_total == 6
+    assert result.right_total == 12

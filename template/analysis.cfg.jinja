@@ -1,0 +1,24 @@
+[business]
+id = "analysis"
+name = "Sample Analysis"
+description = "Example analysis business with independently reportable groups"
+
+[paths]
+datasets = "analysis/datasets"
+reports = "analysis/reports"
+derived = "analysis/derived"
+
+[[groups]]
+label = "alpha"
+item_count = 1000
+threshold = 500
+
+[[groups]]
+label = "beta"
+item_count = 800
+threshold = 300
+
+[[groups]]
+label = "gamma"
+item_count = 600
+threshold = 200

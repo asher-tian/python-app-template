@@ -7,12 +7,16 @@ on:
 jobs:
   generate-and-test:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13", "3.14"]
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.13"
+          python-version: ${{ matrix.python-version }}
 
       - name: Install Copier
         run: python -m pip install --disable-pip-version-check "copier>=9,<10"
@@ -23,7 +27,7 @@ jobs:
           --data "project_name=Template Validation"
           --data "project_slug=template-validation"
           --data "package_name=template_validation"
-          --data "python_version=3.13"
+          --data "python_version=${{ matrix.python-version }}"
           . ./generated
 
       - uses: astral-sh/setup-uv@v6
@@ -38,6 +42,10 @@ jobs:
         working-directory: generated
         run: uv run ruff check .
 
+      - name: Format generated project
+        working-directory: generated
+        run: uv run ruff format .
+
       - name: Check formatting
         working-directory: generated
         run: uv run ruff format --check .
@@ -46,20 +54,32 @@ jobs:
         working-directory: generated
         run: uv run pytest
 
-      - name: CLI configuration smoke test
-        working-directory: generated
-        run: uv run template_validation analysis --config config.json --dry-run
-
-      - name: Run multi-Workflow demo
-        working-directory: generated
-        run: uv run template_validation analysis --config config.json
-
-      - name: Verify reports and run artifacts
+      - name: Run both Business commands
         working-directory: generated
         run: |
-          test -f workspace/reports/alpha/index.html
-          test -f workspace/reports/beta/index.html
-          test -f workspace/reports/gamma/index.html
-          test "$(find workspace/logs/analysis -name manifest.json | wc -l)" -eq 1
-          test "$(find workspace/logs/analysis -path '*/workflows/*.jsonl' | wc -l)" -eq 3
-          test "$(find workspace/logs/analysis -name run.jsonl | wc -l)" -eq 1
+          uv run template_validation analysis --config analysis.cfg
+          uv run template_validation comparison --config comparison.cfg
+
+      - name: Verify per-Run records and custom business paths
+        working-directory: generated
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          root = Path("workspace")
+          run_files = list((root / ".app" / "runs").glob("*/run.json"))
+          assert len(run_files) == 2
+          records = [json.loads(path.read_text()) for path in run_files]
+          assert {record["business_id"] for record in records} == {"analysis", "comparison"}
+          assert all(record["status"] == "success" for record in records)
+          assert not (root / "workspace.json").exists()
+          assert not (root / "businesses").exists()
+          assert not (root / "shared").exists()
+          assert (root / "analysis" / "reports").is_dir()
+          assert (root / "comparison" / "reports").is_dir()
+          PY
+
+      - name: HTTP CLI smoke test
+        working-directory: generated
+        run: uv run template_validation http --help

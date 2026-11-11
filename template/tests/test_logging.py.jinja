@@ -1,50 +1,54 @@
 import json
 
-from {{ package_name }}.interfaces.cli.logging_setup import create_cli_logging_manager
+from {{ package_name }}.store.logging import RunLogging
 
 
-def test_jsonl_routes_run_and_workflow_logs_and_keeps_traceback_out_of_console(
+def test_jsonl_contains_run_and_group_context_and_keeps_traceback_out_of_console(
     tmp_path,
     capsys,
 ):
-    run_dir = tmp_path / "logs"
-    manager = create_cli_logging_manager(
-        logger_name="test.structured_logging",
-        run_dir=run_dir,
-        command="analysis",
-        run_id="run-1",
-    )
-    run_logger = manager.run_logger()
-    workflow_logger = manager.workflow_logger(
-        "analysis",
-        "0001",
-        {"label": "alpha"},
-    )
-
-    run_logger.info("Run started")
-    workflow_logger.bind(task_name="analysis").info("Task started")
+    manager = RunLogging(tmp_path, command="analysis", run_id="run-1")
+    manager.run_logger.info("Run started")
+    group_logger = manager.group_logger("alpha", "analysis")
+    group_logger.info("Group started")
     try:
         raise ValueError("invalid sample")
     except ValueError:
-        workflow_logger.bind(task_name="analysis").exception("Task failed")
+        group_logger.exception("Group failed")
 
     manager.close()
     console = capsys.readouterr().err
 
     run_records = [
         json.loads(line)
-        for line in (run_dir / "run.jsonl").read_text(encoding="utf-8").splitlines()
+        for line in (tmp_path / "logs" / "run.jsonl").read_text(
+            encoding="utf-8"
+        ).splitlines()
     ]
-    workflow_path = run_dir / "workflows" / "analysis_0001.jsonl"
-    workflow_records = [
-        json.loads(line) for line in workflow_path.read_text(encoding="utf-8").splitlines()
+    group_records = [
+        json.loads(line)
+        for line in (
+            tmp_path / "logs" / "groups" / "analysis_alpha.jsonl"
+        ).read_text(encoding="utf-8").splitlines()
     ]
+    run_text = (tmp_path / "logs" / "run.log").read_text(encoding="utf-8")
+    group_text = (
+        tmp_path / "logs" / "groups" / "analysis_alpha.log"
+    ).read_text(encoding="utf-8")
 
     assert run_records[0]["message"] == "Run started"
-    assert all(record["message"] != "Task started" for record in run_records)
-    assert workflow_records[0]["execution_id"] == "0001"
-    assert workflow_records[0]["metadata"] == {"label": "alpha"}
-    assert workflow_records[-1]["exception"]["type"] == "ValueError"
-    assert "Traceback" in workflow_records[-1]["exception"]["stacktrace"]
+    assert run_records[0]["run_id"] == "run-1"
+    assert run_records[0]["command"] == "analysis"
+    assert run_records[0]["source"].endswith("test_logging.py")
+    assert group_records[0]["run_id"] == "run-1"
+    assert group_records[0]["command"] == "analysis"
+    assert group_records[0]["business_id"] == "analysis"
+    assert group_records[0]["group_id"] == "alpha"
+    assert group_records[-1]["exception"]["type"] == "ValueError"
+    assert "Traceback" in group_records[-1]["exception"]["stacktrace"]
+    assert "ValueError: invalid sample" in group_text
+    assert "Traceback (most recent call last)" in group_text
+    assert "test_logging.py:" in group_text
+    assert "Run started" in run_text
     assert "ValueError: invalid sample" in console
     assert "Traceback" not in console

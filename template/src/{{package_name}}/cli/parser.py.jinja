@@ -1,0 +1,42 @@
+"""argparse command definitions."""
+
+import argparse
+from pathlib import Path
+
+
+def _add_business_arguments(command: argparse.ArgumentParser) -> None:
+    command.add_argument("--config", type=Path, required=True, help="Business TOML config")
+    command.add_argument(
+        "--app-config",
+        type=Path,
+        default=Path("app.cfg"),
+        help="Global application TOML config",
+    )
+    command.add_argument("--workpath", type=Path, help="Override configured workpath")
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="{{ project_slug }}")
+    parser.add_argument("--version", action="version", version="%(prog)s 0.2.0")
+    commands = parser.add_subparsers(dest="command", required=True)
+
+    analysis = commands.add_parser("analysis", help="Run the sample Analysis business")
+    _add_business_arguments(analysis)
+
+    comparison = commands.add_parser("comparison", help="Run the sample Comparison business")
+    _add_business_arguments(comparison)
+
+    http = commands.add_parser("http", help="Serve reports from the configured workpath")
+    http.add_argument(
+        "-cfg",
+        "--config",
+        dest="config",
+        type=Path,
+        default=Path("app.cfg"),
+        help="Global application TOML config",
+    )
+    http.add_argument("--workpath", type=Path, help="Override configured workpath")
+    http.add_argument("--host", help="Override HTTP bind host (loopback only)")
+    http.add_argument("--port", type=int, help="Override HTTP port")
+    http.add_argument("--no-open", action="store_true", help="Do not open a browser")
+    return parser

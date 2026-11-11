@@ -1,0 +1,46 @@
+import json
+
+from {{ package_name }}.cli.main import main
+
+
+def test_cli_creates_only_run_records_and_business_owned_artifacts(tmp_path):
+    app_config = tmp_path / "app.cfg"
+    app_config.write_text(
+        '[app]\nworkpath = "./workspace"\n'
+        '[workspace]\nrun_records_dir = "common/executions"\n'
+        '[http]\nauto_open = false\n',
+        encoding="utf-8",
+    )
+    analysis_config = tmp_path / "analysis.cfg"
+    analysis_config.write_text(
+        '[business]\nid = "analysis"\nname = "Analysis"\n'
+        '[paths]\ndatasets = "custom-analysis/data"\n'
+        'reports = "custom-analysis/views"\n'
+        'derived = "custom-analysis/derived"\n'
+        '[[groups]]\nlabel = "alpha"\nitem_count = 4\n'
+        '[[groups]]\nlabel = "beta"\nitem_count = 3\n',
+        encoding="utf-8",
+    )
+
+    assert main([
+        "analysis",
+        "--config",
+        str(analysis_config),
+        "--app-config",
+        str(app_config),
+    ]) == 0
+
+    workspace = tmp_path / "workspace"
+    run_files = list((workspace / "common" / "executions").glob("*/run.json"))
+    assert len(run_files) == 1
+    run = json.loads(run_files[0].read_text(encoding="utf-8"))
+    assert run["status"] == "success"
+    assert {item["group_id"] for item in run["groups"]} == {"alpha", "beta"}
+    assert run["configuration"]["effective_config"]["business"]["paths"]["reports"] == (
+        "custom-analysis/views"
+    )
+    assert run["environment"]["python_version"]
+    assert (workspace / "custom-analysis" / "views").is_dir()
+    assert not (workspace / "workspace.json").exists()
+    assert not (workspace / "businesses").exists()
+    assert not (workspace / "shared").exists()

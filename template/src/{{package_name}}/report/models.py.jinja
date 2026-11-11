@@ -1,0 +1,26 @@
+"""In-memory report output contracts; these are not persisted as manifests."""
+
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class DatasetReference(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    title: str
+    path: str
+    format: str = "json"
+
+
+class GroupRunResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    group_id: str
+    label: str
+    status: Literal["success", "failed"]
+    report_entry: str | None = None
+    datasets: list[DatasetReference] = Field(default_factory=list)
+    summary: dict[str, object] = Field(default_factory=dict)
+    error: str | None = None

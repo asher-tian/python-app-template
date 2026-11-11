@@ -1,0 +1,42 @@
+"""Minimal Workspace path access; it stores no Workspace metadata."""
+
+from __future__ import annotations
+
+import re
+from pathlib import Path, PurePosixPath
+
+from {{ package_name }}.store.files import resolve_relative
+
+
+_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
+
+
+def validate_id(value: str, kind: str) -> str:
+    if not _ID_PATTERN.fullmatch(value):
+        raise ValueError(f"Invalid {kind}: {value!r}")
+    return value
+
+
+class Workspace:
+    def __init__(self, root: Path, *, run_records_dir: str = ".app/runs") -> None:
+        self.root = root.expanduser().resolve()
+        self.run_records_dir = PurePosixPath(run_records_dir).as_posix()
+        resolve_relative(self.root, self.run_records_dir)
+
+    def resolve(self, relative_path: str) -> Path:
+        return resolve_relative(self.root, relative_path)
+
+    def run_dir(self, run_id: str) -> Path:
+        validate_id(run_id, "Run ID")
+        return self.resolve(f"{self.run_records_dir}/{run_id}")
+
+    def run_record_path(self, run_id: str) -> str:
+        validate_id(run_id, "Run ID")
+        return PurePosixPath(self.run_records_dir, run_id, "run.json").as_posix()
+
+    @property
+    def run_records_root(self) -> Path:
+        return self.resolve(self.run_records_dir)
+
+    def initialize(self) -> None:
+        self.root.mkdir(parents=True, exist_ok=True)

@@ -1,0 +1,214 @@
+"""FastAPI application for local report discovery and secondary analysis."""
+
+from __future__ import annotations
+
+import json
+import uuid
+from pathlib import Path
+
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, ConfigDict, Field
+
+from {{ package_name }}.core.workflows.analysis import reanalyze_records
+from {{ package_name }}.report.builders import build_analysis_reanalysis_report
+from {{ package_name }}.report.catalog import ReportCatalog
+from {{ package_name }}.report.models import GroupRunResult
+from {{ package_name }}.store.run_record import RunRecordStore
+from {{ package_name }}.store.logging import RunLogging
+from {{ package_name }}.store.workspace import Workspace
+
+
+_FRONTEND = Path(__file__).resolve().parents[1] / "report" / "frontend"
+
+
+class ReanalysisRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    threshold: int = Field(default=0, ge=0)
+
+
+def create_app(
+    workpath: Path,
+    *,
+    run_records_dir: str = ".app/runs",
+) -> FastAPI:
+    workspace = Workspace(workpath, run_records_dir=run_records_dir)
+    workspace.initialize()
+    catalog = ReportCatalog(workspace)
+    app = FastAPI(title="Local Report Server")
+    app.state.workspace = workspace
+    app.state.catalog = catalog
+    app.mount("/assets", StaticFiles(directory=_FRONTEND), name="assets")
+
+    def not_found(exc: Exception) -> HTTPException:
+        return HTTPException(status_code=404, detail=str(exc))
+
+    @app.get("/")
+    def home() -> FileResponse:
+        return FileResponse(_FRONTEND / "index.html")
+
+    @app.get("/api/businesses")
+    def list_businesses() -> list[dict]:
+        try:
+            return catalog.list_businesses()
+        except (ValueError, json.JSONDecodeError) as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    @app.get("/api/businesses/{business_id}/groups")
+    def list_groups(business_id: str) -> list[dict]:
+        try:
+            return catalog.list_groups(business_id)
+        except (FileNotFoundError, ValueError, json.JSONDecodeError) as exc:
+            raise not_found(exc) from exc
+
+    @app.get("/api/businesses/{business_id}/groups/{group_id}")
+    def get_group(
+        business_id: str,
+        group_id: str,
+        run_id: str | None = None,
+    ) -> dict:
+        try:
+            return catalog.group_context(business_id, group_id, run_id)
+        except (FileNotFoundError, ValueError, json.JSONDecodeError) as exc:
+            raise not_found(exc) from exc
+
+    @app.get("/api/businesses/{business_id}/groups/{group_id}/datasets/{dataset_id}")
+    def get_dataset(
+        business_id: str,
+        group_id: str,
+        dataset_id: str,
+        run_id: str | None = None,
+    ):
+        try:
+            return catalog.dataset(business_id, group_id, dataset_id, run_id)
+        except (FileNotFoundError, ValueError, json.JSONDecodeError) as exc:
+            raise not_found(exc) from exc
+
+    @app.get("/businesses/{business_id}/groups/{group_id}")
+    def report_page(business_id: str, group_id: str) -> FileResponse:
+        try:
+            return FileResponse(catalog.report_path(business_id, group_id))
+        except (FileNotFoundError, ValueError, json.JSONDecodeError) as exc:
+            raise not_found(exc) from exc
+
+    @app.get("/businesses/{business_id}/groups/{group_id}/runs/{run_id}")
+    def historical_report_page(business_id: str, group_id: str, run_id: str) -> FileResponse:
+        try:
+            return FileResponse(catalog.report_path(business_id, group_id, run_id))
+        except (FileNotFoundError, ValueError, json.JSONDecodeError) as exc:
+            raise not_found(exc) from exc
+
+    @app.post("/api/businesses/{business_id}/groups/{group_id}/analysis")
+    def secondary_analysis(
+        business_id: str,
+        group_id: str,
+        request: ReanalysisRequest,
+    ) -> dict:
+        if business_id != "analysis":
+            raise HTTPException(
+                status_code=409,
+                detail=f"Business {business_id!r} does not expose this analysis operation",
+            )
+
+        try:
+            source_run, source_group = catalog.latest_group_run(business_id, group_id)
+            source = catalog.dataset(
+                business_id,
+                group_id,
+                "records",
+                source_run.run_id,
+            )
+        except (FileNotFoundError, ValueError, json.JSONDecodeError) as exc:
+            raise not_found(exc) from exc
+
+        effective_config = source_run.configuration.get("effective_config", {})
+        business_config = effective_config.get("business", {})
+        business_paths = business_config.get("paths", {})
+        records = source["records"]
+        run_id = uuid.uuid4().hex[:12]
+        run_record = RunRecordStore(
+            workspace,
+            run_id=run_id,
+            command="http.analysis",
+            business_id=business_id,
+            business_name=source_run.business_name,
+            business_description=source_run.business_description,
+            config_source="HTTP request",
+            effective_config={
+                "business": business_config,
+                "request": request.model_dump(mode="json"),
+                "source_run_id": source_run.run_id,
+            },
+        )
+        logging_manager = RunLogging(
+            run_record.run_dir,
+            command="http.analysis",
+            run_id=run_id,
+        )
+        run_logger = logging_manager.run_logger
+        group_logger = logging_manager.group_logger(group_id, business_id)
+        run_logger.info(
+            "Run started; business=%s group=%s",
+            business_id,
+            group_id,
+            extra={"business_id": business_id, "group_id": group_id},
+        )
+        group_logger.info(
+            "Secondary analysis started; source_run_id=%s threshold=%d",
+            source_run.run_id,
+            request.threshold,
+        )
+        try:
+            result = reanalyze_records(records, request.threshold)
+            group_result = build_analysis_reanalysis_report(
+                workspace=workspace,
+                business_paths=business_paths,
+                business_id=business_id,
+                group_id=group_id,
+                label=source_group.label,
+                run_id=run_id,
+                records=records,
+                result=result,
+            )
+            run_record.finish(
+                [group_result.model_dump(mode="json")],
+                "success",
+            )
+            group_logger.info("Secondary analysis completed")
+            run_logger.info("Run finished; business=%s group=%s", business_id, group_id)
+            return {
+                **group_result.model_dump(mode="json"),
+                "run_id": run_id,
+                "source_run_id": source_run.run_id,
+            }
+        except Exception as exc:
+            group_logger.exception("Secondary analysis failed")
+            run_logger.error(
+                "Run failed; business=%s group=%s error=%s: %s",
+                business_id,
+                group_id,
+                type(exc).__name__,
+                exc,
+                extra={"business_id": business_id, "group_id": group_id},
+            )
+            failed_group = GroupRunResult(
+                group_id=group_id,
+                label=source_group.label,
+                status="failed",
+                error=f"{type(exc).__name__}: {exc}",
+            )
+            run_record.finish(
+                [failed_group.model_dump(mode="json")],
+                "failed",
+                error=f"{type(exc).__name__}: {exc}",
+            )
+            raise HTTPException(
+                status_code=500,
+                detail=f"Secondary analysis failed: {type(exc).__name__}: {exc}",
+            ) from exc
+        finally:
+            logging_manager.close()
+
+    return app
