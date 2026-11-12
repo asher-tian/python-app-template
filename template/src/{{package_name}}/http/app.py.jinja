@@ -54,7 +54,8 @@ def create_app(
         selected_run = f' data-run-id="{escape(run_id)}"' if run_id else ""
         return HTMLResponse(
             "<!doctype html><html lang='en'><head>"
-            "<meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1'>"
+            "<meta charset='utf-8'>"
+            "<meta name='viewport' content='width=device-width, initial-scale=1'>"
             "<title>Report</title><link rel='stylesheet' href='/assets/style.css'>"
             "<script src='/assets/report.js' defer></script></head><body>"
             "<header><a href='/'>Report Home</a></header>"
