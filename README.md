@@ -8,21 +8,21 @@
 
 ```bash
 uv tool install copier
-copier copy gh:asher-tian/python-cli-data-analysis-template ./my-app
-cd ./my-app
+copier copy gh:asher-tian/python-cli-data-analysis-template ./my-project
+cd ./my-project
 uv sync
 
 # 执行分析
-uv run my_app analysis --config analysis.cfg
-uv run my_app comparison --config comparison.cfg
+uv run my_project analysis --config analysis.cfg
+uv run my_project comparison --config comparison.cfg
 
 # 查看报告
-uv run my_app http --config app.cfg
+uv run my_project http --config app.cfg
 ```
 
-浏览器打开 http://127.0.0.1:8000。HTTP 服务按需启动，默认仅监听本机地址。
+`project_name` 默认取目标目录名。例如目标目录为 `./my-project` 时，默认生成 `project_name=my-project`、`project_slug=my-project` 和 `package_name=my_project`。这些值都可以在 Copier 提示中修改。
 
-将示例命令中的 `my_app` 替换为 Copier 参数 `package_name` 对应的命令名。
+浏览器打开 http://127.0.0.1:8000。HTTP 服务按需启动，默认仅监听本机地址。
 
 ## 项目结构
 

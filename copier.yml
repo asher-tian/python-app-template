@@ -2,8 +2,8 @@ _min_copier_version: "9.0.0"
 _subdirectory: template
 project_name:
   type: str
-  help: 项目显示名称
-  default: my-app
+  help: 项目显示名称（默认使用目标目录名）
+  default: "{{ _folder_name }}"
 project_slug:
   type: str
   help: Python 分发包名称（使用小写字母、数字和连字符）

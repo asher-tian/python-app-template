@@ -30,36 +30,49 @@ jobs:
       - name: Generate project from template
         run: >-
           copier copy --defaults
-          --data "project_name=Template Validation"
-          --data "project_slug=template-validation"
-          --data "package_name=template_validation"
           --data "python_version=${{ matrix.python-version }}"
-          . ./generated
+          . ./template-validation
+
+      - name: Verify project name follows destination directory
+        working-directory: template-validation
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          assert Path("README.md").read_text(encoding="utf-8").startswith(
+              "# template-validation\n"
+          )
+          pyproject = Path("pyproject.toml").read_text(encoding="utf-8")
+          assert 'name = "template-validation"' in pyproject
+          assert 'description = "template-validation"' in pyproject
+          assert "template_validation =" in pyproject
+          assert Path("src/template_validation").is_dir()
+          PY
 
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
 
       - name: Install project dependencies
-        working-directory: generated
+        working-directory: template-validation
         run: uv sync --all-groups
 
       - name: Lint
-        working-directory: generated
+        working-directory: template-validation
         run: uv run ruff check .
 
       - name: Test
-        working-directory: generated
+        working-directory: template-validation
         run: uv run pytest
 
       - name: Run Business commands
-        working-directory: generated
+        working-directory: template-validation
         run: |
           uv run template_validation analysis --config analysis.cfg
           uv run template_validation comparison --config comparison.cfg
 
       - name: Verify Run records and Business paths
-        working-directory: generated
+        working-directory: template-validation
         run: |
           python - <<'PY'
           import json
@@ -80,12 +93,12 @@ jobs:
 
       - name: Install Chromium for browser smoke test
         if: matrix.python-version == '3.13'
-        working-directory: generated
+        working-directory: template-validation
         run: uv run --with playwright playwright install --with-deps chromium
 
       - name: Run browser smoke test
         if: matrix.python-version == '3.13'
-        working-directory: generated
+        working-directory: template-validation
         env:
           RUN_BROWSER_SMOKE: "1"
         run: uv run --with playwright pytest tests/test_frontend_browser.py
