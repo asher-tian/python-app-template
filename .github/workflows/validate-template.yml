@@ -56,7 +56,10 @@ jobs:
 
       - name: Validate report frontend JavaScript
         working-directory: generated
-        run: node --check src/template_validation/report/frontend/report.js
+        run: |
+          node --check src/template_validation/report/frontend/report.js
+          node --input-type=module --check < src/template_validation/report/frontend/businesses/analysis.js
+          node --input-type=module --check < src/template_validation/report/frontend/businesses/comparison.js
 
       - name: Run both Business commands
         working-directory: generated

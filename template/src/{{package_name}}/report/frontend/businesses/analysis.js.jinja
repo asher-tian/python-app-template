@@ -1,0 +1,19 @@
+export async function render({root, run, renderMetrics, renderDataset}) {
+  const summary = run.summary || {};
+  const note = document.createElement("p");
+  note.className = "business-note";
+  note.textContent = "Analysis · threshold-based record analysis";
+  root.appendChild(note);
+
+  root.insertAdjacentHTML("beforeend", renderMetrics([
+    ["Items", summary.item_count],
+    ["Threshold", summary.threshold],
+    ["Total", summary.total]
+  ]));
+
+  for (const dataset of run.datasets || []) {
+    if (dataset.id !== "summary") {
+      root.appendChild(await renderDataset(dataset));
+    }
+  }
+}

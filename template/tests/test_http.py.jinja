@@ -61,6 +61,8 @@ def test_http_discovers_from_run_records_and_persists_secondary_analysis(tmp_pat
     page = client.get("/businesses/analysis/groups/alpha")
     assert page.status_code == 200
     assert 'data-business-id="analysis"' in page.text
+    assert client.get("/assets/businesses/analysis.js").status_code == 200
+    assert client.get("/assets/businesses/comparison.js").status_code == 200
 
     dataset = client.get(
         "/api/businesses/analysis/groups/alpha/datasets/records?page=1&page_size=2"

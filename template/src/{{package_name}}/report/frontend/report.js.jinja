@@ -46,30 +46,35 @@
       "</span><strong>" + escapeHtml(displayValue(value)) + "</strong></article>";
   }
 
-  function renderMetrics(reportKind, summary) {
-    let metrics;
-    switch (reportKind) {
-      case "analysis":
-        metrics = [
-          ["Items", summary.item_count],
-          ["Threshold", summary.threshold],
-          ["Total", summary.total]
-        ];
-        break;
-      case "comparison":
-        metrics = [
-          ["Items", summary.item_count],
-          ["Left total", summary.left_total],
-          ["Right total", summary.right_total],
-          ["Difference", Number(summary.right_total || 0) - Number(summary.left_total || 0)]
-        ];
-        break;
-      default:
-        metrics = Object.entries(summary || {}).map(([key, value]) => [key, value]);
-    }
+  function renderMetrics(metrics) {
     return "<div class='metrics'>" + metrics.map(([label, value]) =>
       metricMarkup(label, value)
     ).join("") + "</div>";
+  }
+
+  async function renderBusinessReport(reportKind, context) {
+    let view;
+    if (reportKind === "analysis") {
+      view = await import("/assets/businesses/analysis.js");
+    } else if (reportKind === "comparison") {
+      view = await import("/assets/businesses/comparison.js");
+    }
+
+    if (view && typeof view.render === "function") {
+      await view.render({...context, renderMetrics});
+      return;
+    }
+
+    const summary = context.run.summary || {};
+    context.root.insertAdjacentHTML(
+      "beforeend",
+      renderMetrics(Object.entries(summary))
+    );
+    for (const ref of context.run.datasets || []) {
+      if (ref.id !== "summary") {
+        context.root.appendChild(await context.renderDataset(ref));
+      }
+    }
   }
 
   function renderHistory(group, businessId, groupId, currentPage) {
@@ -259,18 +264,12 @@
       renderMetrics(reportKind, run.summary || {});
     root.appendChild(summary);
 
-    if (reportKind === "analysis") {
-      root.insertAdjacentHTML("beforeend",
-        "<p class='business-note'>Analysis view · records and threshold-based results</p>");
-    } else if (reportKind === "comparison") {
-      root.insertAdjacentHTML("beforeend",
-        "<p class='business-note'>Comparison view · left and right result totals</p>");
-    }
-
-    for (const ref of run.datasets || []) {
-      if (ref.id === "summary") continue;
-      root.appendChild(await renderDataset(ref, base, run.run_id));
-    }
+    await renderBusinessReport(reportKind, {
+      root,
+      run,
+      escapeHtml,
+      renderDataset: (ref) => renderDataset(ref, base, run.run_id)
+    });
 
     root.insertAdjacentHTML("beforeend", renderRunMetadata(run));
     root.insertAdjacentHTML("beforeend", renderHistory(group, businessId, groupId, historyPage));
