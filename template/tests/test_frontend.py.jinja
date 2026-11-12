@@ -1,0 +1,42 @@
+from fastapi.testclient import TestClient
+
+from {{ package_name }}.http.app import create_app
+
+
+def test_frontend_assets_are_local_and_served_by_http(tmp_path):
+    client = TestClient(create_app(tmp_path / "workspace"))
+
+    home = client.get("/")
+    assert home.status_code == 200
+    assert 'data-page="home"' in home.text
+    assert "/assets/vendor/bootstrap/bootstrap.min.css" in home.text
+    assert "/assets/css/app.css" in home.text
+    assert "/assets/js/app.js" in home.text
+    assert "cdn.jsdelivr.net" not in home.text
+    assert "unpkg.com" not in home.text
+
+    assets = [
+        "/assets/vendor/bootstrap/bootstrap.min.css",
+        "/assets/vendor/echarts/echarts.min.js",
+        "/assets/vendor/THIRD-PARTY-NOTICES.md",
+        "/assets/vendor/licenses/bootstrap-MIT.txt",
+        "/assets/vendor/licenses/echarts-Apache-2.0.txt",
+        "/assets/vendor/licenses/echarts-NOTICE.txt",
+        "/assets/css/app.css",
+        "/assets/js/app.js",
+        "/assets/js/api.js",
+        "/assets/js/pages/home.js",
+        "/assets/js/pages/report.js",
+        "/assets/js/shared/format.js",
+        "/assets/js/shared/metrics.js",
+        "/assets/js/shared/pagination.js",
+        "/assets/js/shared/table.js",
+        "/assets/js/shared/chart.js",
+        "/assets/js/businesses/analysis.js",
+        "/assets/js/businesses/comparison.js",
+    ]
+
+    for path in assets:
+        response = client.get(path)
+        assert response.status_code == 200, path
+        assert response.content, path

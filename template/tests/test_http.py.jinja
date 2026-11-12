@@ -61,8 +61,9 @@ def test_http_discovers_from_run_records_and_persists_secondary_analysis(tmp_pat
     page = client.get("/businesses/analysis/groups/alpha")
     assert page.status_code == 200
     assert 'data-business-id="analysis"' in page.text
-    assert client.get("/assets/businesses/analysis.js").status_code == 200
-    assert client.get("/assets/businesses/comparison.js").status_code == 200
+    assert "/assets/vendor/bootstrap/bootstrap.min.css" in page.text
+    assert "/assets/css/app.css" in page.text
+    assert "/assets/js/app.js" in page.text
 
     dataset = client.get(
         "/api/businesses/analysis/groups/alpha/datasets/records?page=1&page_size=2"
@@ -133,7 +134,6 @@ def test_http_does_not_expose_undeclared_workspace_files(tmp_path):
     assert traversal.status_code in (404, 405)
 
 
-
 def test_http_host_is_loopback_only_and_ipv6_url_is_bracketed():
     assert _require_loopback("localhost") == "127.0.0.1"
     assert _require_loopback("127.0.0.1") == "127.0.0.1"
@@ -141,7 +141,6 @@ def test_http_host_is_loopback_only_and_ipv6_url_is_bracketed():
 
     with pytest.raises(ValueError, match="loopback"):
         _require_loopback("0.0.0.0")
-
 
 
 def test_failed_only_group_remains_browsable(tmp_path):

@@ -1,20 +1,20 @@
 export async function render({root, run, renderMetrics, renderDataset}) {
   const summary = run.summary || {};
   const note = document.createElement("p");
-  note.className = "business-note";
+  note.className = "small text-secondary mb-3";
   note.textContent = "Comparison · left and right result analysis";
-  root.appendChild(note);
+  root.append(note);
 
-  root.insertAdjacentHTML("beforeend", renderMetrics([
+  renderMetrics(root, [
     ["Items", summary.item_count],
     ["Left total", summary.left_total],
     ["Right total", summary.right_total],
     ["Difference", Number(summary.right_total || 0) - Number(summary.left_total || 0)]
-  ]));
+  ]);
 
-  for (const dataset of run.datasets || []) {
-    if (dataset.id !== "summary") {
-      root.appendChild(await renderDataset(dataset));
+  for (const reference of run.datasets || []) {
+    if (reference.id !== "summary") {
+      root.append(await renderDataset(reference));
     }
   }
 }

@@ -1,0 +1,16 @@
+import { renderHome } from "./pages/home.js";
+import { renderReport } from "./pages/report.js";
+
+const root = document.getElementById("app");
+
+if (root) {
+  const renderPage = root.dataset.page === "report" ? renderReport : renderHome;
+
+  renderPage(root).catch((error) => {
+    const alert = document.createElement("div");
+    alert.className = "alert alert-danger";
+    alert.setAttribute("role", "alert");
+    alert.textContent = "Unable to load report: " + error.message;
+    root.replaceChildren(alert);
+  });
+}

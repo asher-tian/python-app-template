@@ -33,18 +33,24 @@ def _report_page(
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
   <title>{escape(title)}</title>
-  <link rel="stylesheet" href="/assets/style.css">
-  <script src="/assets/report.js" defer></script>
+  <link rel="stylesheet" href="/assets/vendor/bootstrap/bootstrap.min.css">
+  <link rel="stylesheet" href="/assets/css/app.css">
+  <script type="module" src="/assets/js/app.js"></script>
 </head>
 <body>
-  <header><a href="/">Report Home</a></header>
-  <main id="app" data-page="report"
+  <nav class="navbar app-navbar">
+    <div class="container-xxl">
+      <a class="navbar-brand" href="/">Report Home</a>
+    </div>
+  </nav>
+  <main id="app" class="container-xxl py-4" data-page="report"
         data-business-id="{escape(business_id)}"
         data-group-id="{escape(group_id)}"
         data-run-id="{escape(run_id)}"
         data-report-kind="{escape(report_kind)}">
-    <p>Loading report…</p>
+    <p class="text-secondary">Loading report…</p>
   </main>
 </body>
 </html>

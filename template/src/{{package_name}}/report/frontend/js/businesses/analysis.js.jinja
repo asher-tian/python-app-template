@@ -1,19 +1,19 @@
 export async function render({root, run, renderMetrics, renderDataset}) {
   const summary = run.summary || {};
   const note = document.createElement("p");
-  note.className = "business-note";
+  note.className = "small text-secondary mb-3";
   note.textContent = "Analysis · threshold-based record analysis";
-  root.appendChild(note);
+  root.append(note);
 
-  root.insertAdjacentHTML("beforeend", renderMetrics([
-    ["Items", summary.item_count],
+  renderMetrics(root, [
+    ["Items", summary.item_count ?? summary.selected_count],
     ["Threshold", summary.threshold],
     ["Total", summary.total]
-  ]));
+  ]);
 
-  for (const dataset of run.datasets || []) {
-    if (dataset.id !== "summary") {
-      root.appendChild(await renderDataset(dataset));
+  for (const reference of run.datasets || []) {
+    if (reference.id !== "summary") {
+      root.append(await renderDataset(reference));
     }
   }
 }

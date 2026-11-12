@@ -15,7 +15,7 @@
 - Store 负责 Workspace 路径访问、Run 记录和通用文件操作；不解释业务目录内部含义。
 - HTTP 负责页面服务、请求校验和调用业务入口；不得在路由中实现业务算法或直接拼接业务内部目录。
 - CLI 和 HTTP 可以调用同一 Core workflow。Core 不反向依赖任何入口。
-- 不预建 Runtime、Bootstrap、Ports、Adapters、Repository Framework、Task Registry、Component Registry、DAG Engine、插件系统或分布式 Worker。
+- 不预建 Runtime、应用启动引导器（Bootstrapper）、Ports、Adapters、Repository Framework、Task Registry、Component Registry、DAG Engine、插件系统或分布式 Worker。
 
 ## Workspace 与路径
 
@@ -46,11 +46,25 @@
 - Business 配置声明的路径由对应业务的 Report builder 使用；不要把业务目录名写进通用 Workspace 或 Store。
 - Report 可以扫描和聚合 Run 记录，构建 Business -> Group -> Run 导航；不生成或维护 Business / Group Manifest。
 - GroupRunResult.report_kind 标识业务报告类型；公共 Shell 负责导航和通用 Run 信息，业务展示使用明确的业务分支，不建立动态 Registry。
-- 每个 Business 的前端展示放在 report/frontend/businesses/<report_kind>.js；共享 report.js 只做显式分发、导航和 Dataset 分页，不集中堆叠业务页面逻辑。
+- 每个 Business 的前端展示放在 report/frontend/js/businesses/<report_kind>.js；页面编排位于 js/pages，跨业务 UI 能力位于 js/shared。
 - 大型表格 Dataset 使用 JSONL；DatasetReference 保存 format 和 row_count。HTTP 只返回当前分页，不把完整 Dataset 发送给浏览器。
 - 小型统计和结构化结果使用 JSON。分页默认 50 条，最大 200 条。
 - 浏览器端只承担展示、筛选和轻量计算；复杂业务分析必须调用 Core。
 - 不为了统一外观强制所有业务使用相同页面结构。
+
+## Report Frontend
+
+- V1 使用 Bootstrap 5.3.3 CSS、原生 JavaScript ES Modules 和 Apache ECharts 5.6.0。
+- 第三方浏览器资源必须固定版本并放在 report/frontend/vendor；保留上游许可证信息，不依赖 CDN。
+- 不引入 Vue、React、jQuery、Vite、SPA Router 或全局状态管理库。
+- 生成项目的运行和 HTTP 服务启动不得依赖 Node.js 或前端构建步骤；Node.js 仅可用于 CI 的语法检查；CI 使用临时 Playwright + Chromium 环境验证关键浏览器交互，不将 Playwright 加入生成项目依赖。
+- 页面入口由 js/app.js 显式分发到 js/pages；业务视图由 js/pages/report.js 显式分发到 js/businesses，不建立动态组件 Registry。
+- js/shared 只放跨页面或跨 Business 确实重复的 API、表格、分页、指标、图表和格式化能力。
+- 使用 DOM API 和 textContent 渲染 API 数据；不得把未转义的外部数据拼入 innerHTML。
+- 前端只能通过 HTTP API 获取报告数据，不得直接读取 workpath 文件。
+- 大型 Dataset 必须服务端分页；浏览器只获取当前页。
+- 图表通过共享 chart helper 延迟加载 ECharts；创建图表的业务视图必须负责调用返回的 dispose 函数，避免重复初始化和事件监听泄漏。
+- 页面定位状态使用 URL path/query；不维护无必要的全局可变状态。
 
 ## HTTP
 

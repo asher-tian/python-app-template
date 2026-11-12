@@ -56,13 +56,19 @@ def create_app(
             "<!doctype html><html lang='en'><head>"
             "<meta charset='utf-8'>"
             "<meta name='viewport' content='width=device-width, initial-scale=1'>"
-            "<title>Report</title><link rel='stylesheet' href='/assets/style.css'>"
-            "<script src='/assets/report.js' defer></script></head><body>"
-            "<header><a href='/'>Report Home</a></header>"
-            "<main id='app' data-page='report'"
+            "<meta name='color-scheme' content='light'>"
+            "<title>Report</title>"
+            "<link rel='stylesheet' href='/assets/vendor/bootstrap/bootstrap.min.css'>"
+            "<link rel='stylesheet' href='/assets/css/app.css'>"
+            "<script type='module' src='/assets/js/app.js'></script>"
+            "</head><body>"
+            "<nav class='navbar app-navbar'><div class='container-xxl'>"
+            "<a class='navbar-brand' href='/'>Report Home</a>"
+            "</div></nav>"
+            "<main id='app' class='container-xxl py-4' data-page='report'"
             f' data-business-id="{escape(business_id)}"'
             f' data-group-id="{escape(group_id)}"{selected_run}>'
-            "<p>Loading report…</p></main></body></html>"
+            "<p class='text-secondary'>Loading report…</p></main></body></html>"
         )
 
     @app.get("/")

@@ -1,0 +1,42 @@
+export function displayValue(value) {
+  if (value === null || value === undefined || value === "") {
+    return "—";
+  }
+  if (typeof value === "object") {
+    return JSON.stringify(value);
+  }
+  return String(value);
+}
+
+export function formatDate(value) {
+  if (!value) {
+    return "—";
+  }
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString();
+}
+
+export function createStatusBadge(status) {
+  const badge = document.createElement("span");
+  badge.className = "badge rounded-pill status-badge";
+  badge.textContent = status || "unknown";
+
+  if (status === "success") {
+    badge.classList.add("status-success");
+  } else if (status === "failed") {
+    badge.classList.add("status-failed");
+  } else {
+    badge.classList.add("status-neutral");
+  }
+
+  return badge;
+}
+
+export function createTextElement(tagName, className, value) {
+  const element = document.createElement(tagName);
+  if (className) {
+    element.className = className;
+  }
+  element.textContent = value ?? "";
+  return element;
+}

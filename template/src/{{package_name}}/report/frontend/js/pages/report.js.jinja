@@ -1,0 +1,365 @@
+import { requestJson, getQueryNumber } from "../api.js";
+import { createStatusBadge, createTextElement, formatDate } from "../shared/format.js";
+import { renderMetrics } from "../shared/metrics.js";
+import { renderDataset } from "../shared/table.js";
+
+function createPanel(title) {
+  const section = document.createElement("section");
+  section.className = "card report-card mb-4";
+
+  const body = document.createElement("div");
+  body.className = "card-body";
+
+  if (title) {
+    body.append(createTextElement("h2", "h6 mb-3", title));
+  }
+
+  section.append(body);
+  return {section, body};
+}
+
+function renderRunSummary(root, run) {
+  const panel = createPanel(null);
+  const heading = document.createElement("div");
+  heading.className = "d-flex flex-wrap align-items-start justify-content-between gap-3";
+
+  const identity = document.createElement("div");
+  identity.append(
+    createTextElement("p", "eyebrow mb-1", "RUN SUMMARY"),
+    createTextElement("h2", "h5 mb-1", run.run_id),
+    createTextElement("p", "small text-secondary mb-0", formatDate(run.started_at))
+  );
+
+  heading.append(identity, createStatusBadge(run.status));
+  panel.body.append(heading);
+  root.append(panel.section);
+}
+
+function renderRunMetadata(root, run) {
+  const panel = createPanel("Run details");
+  const grid = document.createElement("div");
+  grid.className = "row g-3 mb-3";
+
+  const fields = [
+    ["Command", run.command],
+    ["Started", formatDate(run.started_at)],
+    ["Finished", formatDate(run.finished_at)],
+    ["Status", run.status]
+  ];
+
+  for (const [label, value] of fields) {
+    const column = document.createElement("div");
+    column.className = "col-12 col-sm-6 col-xl-3";
+    column.append(
+      createTextElement("div", "small text-secondary mb-1", label),
+      createTextElement("div", "fw-medium text-break", value || "—")
+    );
+    grid.append(column);
+  }
+  panel.body.append(grid);
+
+  if (run.error) {
+    const alert = createTextElement("div", "alert alert-warning", run.error);
+    alert.setAttribute("role", "alert");
+    panel.body.append(alert);
+  }
+
+  const configuration = document.createElement("details");
+  configuration.className = "border-top pt-3 mt-3";
+  configuration.append(
+    createTextElement("summary", "fw-medium", "Effective configuration (secrets redacted)")
+  );
+  const configurationText = createTextElement(
+    "pre",
+    "dataset-json mt-3",
+    JSON.stringify(run.configuration || {}, null, 2)
+  );
+  configuration.append(configurationText);
+
+  const environment = document.createElement("details");
+  environment.className = "border-top pt-3 mt-3";
+  environment.append(
+    createTextElement("summary", "fw-medium", "Execution environment")
+  );
+  environment.append(
+    createTextElement(
+      "pre",
+      "dataset-json mt-3",
+      JSON.stringify(run.environment || {}, null, 2)
+    )
+  );
+
+  panel.body.append(configuration, environment);
+  root.append(panel.section);
+}
+
+function renderHistory(root, group, businessId, groupId, currentPage) {
+  const panel = createPanel("Run history");
+  panel.body.append(
+    createTextElement(
+      "p",
+      "small text-secondary",
+      (group.runs_count || 0) + " executions"
+    )
+  );
+
+  const list = document.createElement("ol");
+  list.className = "list-unstyled run-history mb-0";
+
+  for (const run of group.runs || []) {
+    const item = document.createElement("li");
+    item.className = "run-history-item d-flex flex-wrap align-items-start justify-content-between gap-3";
+
+    const details = document.createElement("div");
+    details.className = "min-w-0";
+
+    const title = document.createElement("a");
+    title.className = "fw-medium";
+    title.textContent = run.run_id;
+    title.href = "/businesses/" + encodeURIComponent(businessId) +
+      "/groups/" + encodeURIComponent(groupId) + "/runs/" + encodeURIComponent(run.run_id);
+
+    const metadata = createTextElement(
+      "p",
+      "small text-secondary mb-1",
+      formatDate(run.started_at) + " · " + (run.command || "")
+    );
+    details.append(title, metadata);
+
+    if (run.error) {
+      details.append(createTextElement("p", "small text-danger mb-0", run.error));
+    }
+
+    const status = createStatusBadge(run.status);
+    const kind = createTextElement("span", "small text-secondary", run.report_kind || "report");
+    item.append(details, status, kind);
+    list.append(item);
+  }
+
+  if (!group.runs || group.runs.length === 0) {
+    panel.body.append(createTextElement("p", "text-secondary mb-0", "No Run history."));
+  } else {
+    panel.body.append(list);
+  }
+
+  const totalPages = group.history_total_pages || 0;
+  if (totalPages > 1) {
+    const navigation = document.createElement("nav");
+    navigation.className = "d-flex align-items-center justify-content-between gap-3 mt-3";
+    navigation.setAttribute("aria-label", "Run history pagination");
+
+    const label = createTextElement(
+      "span",
+      "small text-secondary",
+      "Page " + currentPage + " of " + totalPages
+    );
+
+    const controls = document.createElement("div");
+    controls.className = "btn-group btn-group-sm";
+
+    const previous = document.createElement("button");
+    previous.type = "button";
+    previous.className = "btn btn-outline-secondary";
+    previous.textContent = "Previous";
+    previous.disabled = currentPage <= 1;
+    previous.addEventListener("click", () => navigateHistory(currentPage - 1));
+
+    const next = document.createElement("button");
+    next.type = "button";
+    next.className = "btn btn-outline-secondary";
+    next.textContent = "Next";
+    next.disabled = currentPage >= totalPages;
+    next.addEventListener("click", () => navigateHistory(currentPage + 1));
+
+    controls.append(previous, next);
+    navigation.append(label, controls);
+    panel.body.append(navigation);
+  }
+
+  root.append(panel.section);
+}
+
+function navigateHistory(page) {
+  const url = new URL(window.location.href);
+  if (page <= 1) {
+    url.searchParams.delete("history_page");
+  } else {
+    url.searchParams.set("history_page", String(page));
+  }
+  window.location.assign(url);
+}
+
+async function renderBusinessReport(root, run, businessId, groupId, baseUrl) {
+  const renderDatasetForRun = (reference) => renderDataset({
+    reference,
+    baseUrl,
+    runId: run.run_id,
+    initialPage: getQueryNumber("dataset_" + reference.id + "_page", 1)
+  });
+
+  if (run.report_kind === "analysis") {
+    const view = await import("../businesses/analysis.js");
+    await view.render({
+      root,
+      run,
+      renderMetrics,
+      renderDataset: renderDatasetForRun
+    });
+    return;
+  }
+
+  if (run.report_kind === "comparison") {
+    const view = await import("../businesses/comparison.js");
+    await view.render({
+      root,
+      run,
+      renderMetrics,
+      renderDataset: renderDatasetForRun
+    });
+    return;
+  }
+
+  renderMetrics(root, Object.entries(run.summary || {}));
+  for (const reference of run.datasets || []) {
+    if (reference.id !== "summary") {
+      root.append(await renderDatasetForRun(reference));
+    }
+  }
+}
+
+function renderSecondaryAnalysis(root, baseUrl, businessId, groupId) {
+  const panel = createPanel("Secondary analysis");
+  panel.body.append(
+    createTextElement(
+      "p",
+      "small text-secondary",
+      "Run a new analysis against this Group's latest successful Dataset."
+    )
+  );
+
+  const form = document.createElement("form");
+  form.className = "row g-3 align-items-end";
+
+  const field = document.createElement("div");
+  field.className = "col-12 col-sm-6 col-md-4";
+
+  const label = createTextElement("label", "form-label", "Minimum value");
+  label.htmlFor = "analysis-threshold";
+
+  const input = document.createElement("input");
+  input.id = "analysis-threshold";
+  input.name = "threshold";
+  input.type = "number";
+  input.min = "0";
+  input.value = "0";
+  input.className = "form-control";
+
+  field.append(label, input);
+
+  const action = document.createElement("div");
+  action.className = "col-auto";
+  const button = createTextElement("button", "btn btn-primary", "Run analysis");
+  button.type = "submit";
+  action.append(button);
+
+  const status = createTextElement("p", "col-12 small mb-0", "");
+  status.setAttribute("aria-live", "polite");
+
+  form.append(field, action, status);
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    button.disabled = true;
+    status.className = "col-12 small text-secondary mb-0";
+    status.textContent = "Running…";
+
+    try {
+      const threshold = Number(new FormData(form).get("threshold") || 0);
+      const result = await requestJson(baseUrl + "/analysis", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({threshold})
+      });
+      status.textContent = "Created Run " + result.run_id;
+      window.location.assign(
+        "/businesses/" + encodeURIComponent(businessId) +
+        "/groups/" + encodeURIComponent(groupId)
+      );
+    } catch (error) {
+      status.className = "col-12 small text-danger mb-0";
+      status.textContent = error.message;
+      button.disabled = false;
+    }
+  });
+
+  panel.body.append(form);
+  root.append(panel.section);
+}
+
+export async function renderReport(root) {
+  const businessId = root.dataset.businessId;
+  const groupId = root.dataset.groupId;
+  const query = new URLSearchParams(window.location.search);
+  const selectedRunId = root.dataset.runId || query.get("run_id");
+  const historyPage = getQueryNumber("history_page", 1);
+  const baseUrl = "/api/businesses/" + encodeURIComponent(businessId) +
+    "/groups/" + encodeURIComponent(groupId);
+  const detailQuery = new URLSearchParams({
+    history_page: String(historyPage),
+    history_page_size: "10"
+  });
+  if (selectedRunId) {
+    detailQuery.set("run_id", selectedRunId);
+  }
+
+  const detail = await requestJson(baseUrl + "?" + detailQuery);
+  const group = detail.group;
+  const run = detail.latest_run;
+  const reportKind = run.report_kind || root.dataset.reportKind || "generic";
+
+  root.replaceChildren();
+
+  const breadcrumb = document.createElement("nav");
+  breadcrumb.className = "small text-secondary mb-3";
+  breadcrumb.setAttribute("aria-label", "Breadcrumb");
+  const home = createTextElement("a", "", "All Businesses");
+  home.href = "/";
+  breadcrumb.append(home, document.createTextNode(
+    " / " + detail.business.name + " / " + group.label
+  ));
+
+  const heading = document.createElement("div");
+  heading.className = "page-heading mb-4";
+  heading.append(
+    createTextElement("p", "eyebrow mb-1", reportKind.toUpperCase() + " REPORT"),
+    createTextElement("h1", "display-6 fw-semibold mb-2", group.label),
+    createTextElement(
+      "p",
+      "text-secondary small mb-0",
+      detail.business.name + " · Business " + businessId + " · Group " + groupId
+    )
+  );
+
+  root.append(breadcrumb, heading);
+
+  if (group.latest_status === "failed") {
+    const message = run.status === "failed"
+      ? "No successful report is available for this Group yet. Showing the latest failed Run."
+      : "The latest attempt failed. Showing the most recent successful report.";
+    const alert = createTextElement("div", "alert alert-warning", message);
+    alert.setAttribute("role", "alert");
+    root.append(alert);
+  }
+
+  renderRunSummary(root, run);
+  await renderBusinessReport(root, run, businessId, groupId, baseUrl);
+  renderRunMetadata(root, run);
+  renderHistory(root, group, businessId, groupId, historyPage);
+
+  if (
+    businessId === "analysis" &&
+    run.run_id === group.latest_run_id &&
+    run.status === "success"
+  ) {
+    renderSecondaryAnalysis(root, baseUrl, businessId, groupId);
+  }
+}

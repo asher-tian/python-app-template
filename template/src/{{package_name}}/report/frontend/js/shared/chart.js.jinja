@@ -1,0 +1,39 @@
+let echartsLoading;
+
+function loadECharts() {
+  if (window.echarts) {
+    return Promise.resolve(window.echarts);
+  }
+
+  if (!echartsLoading) {
+    echartsLoading = new Promise((resolve, reject) => {
+      const script = document.createElement("script");
+      script.src = "/assets/vendor/echarts/echarts.min.js";
+      script.async = true;
+      script.onload = () => resolve(window.echarts);
+      script.onerror = () => reject(new Error("Unable to load the local ECharts asset"));
+      document.head.append(script);
+    });
+  }
+
+  return echartsLoading;
+}
+
+export async function renderChart(container, options) {
+  const echarts = await loadECharts();
+  if (!echarts) {
+    throw new Error("ECharts did not initialize");
+  }
+
+  container.classList.add("report-chart");
+  const instance = echarts.init(container);
+  instance.setOption(options);
+
+  const resize = () => instance.resize();
+  window.addEventListener("resize", resize);
+
+  return () => {
+    window.removeEventListener("resize", resize);
+    instance.dispose();
+  };
+}

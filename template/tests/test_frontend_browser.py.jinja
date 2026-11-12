@@ -1,0 +1,85 @@
+from __future__ import annotations
+
+import os
+import shutil
+import subprocess
+import time
+from urllib.error import URLError
+from urllib.request import urlopen
+
+import pytest
+
+
+@pytest.mark.skipif(
+    os.environ.get("RUN_BROWSER_SMOKE") != "1",
+    reason="browser smoke test runs in the dedicated Playwright CI job",
+)
+def test_report_web_browser_smoke():
+    from playwright.sync_api import sync_playwright
+
+    executable = shutil.which("template_validation")
+    assert executable is not None
+
+    server = subprocess.Popen(
+        [executable, "http", "--config", "app.cfg"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.STDOUT,
+    )
+    base_url = "http://127.0.0.1:8000"
+
+    try:
+        for _ in range(40):
+            if server.poll() is not None:
+                raise AssertionError("Report HTTP server exited before becoming ready")
+            try:
+                with urlopen(base_url, timeout=1):
+                    break
+            except (OSError, URLError):
+                time.sleep(0.5)
+        else:
+            raise AssertionError("Report HTTP server did not become ready")
+
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch()
+            page = browser.new_page()
+            try:
+                page.goto(base_url, wait_until="networkidle")
+                assert page.get_by_role("heading", name="Reports").is_visible()
+                assert page.locator(".group-title").count() >= 2
+
+                page.locator(".group-title").nth(0).click()
+                page.get_by_text(
+                    "Analysis · threshold-based record analysis",
+                    exact=True,
+                ).wait_for()
+                assert page.locator("table tbody tr").count() > 0
+
+                with page.expect_response(
+                    lambda response: (
+                        response.request.method == "POST"
+                        and response.url.endswith("/analysis")
+                        and response.status == 200
+                    )
+                ):
+                    page.get_by_role("button", name="Run analysis").click()
+
+                page.wait_for_load_state("networkidle")
+                assert page.locator(".run-history-item").count() >= 2
+
+                page.goto(base_url, wait_until="networkidle")
+                page.locator(".group-title").nth(1).click()
+                page.get_by_text(
+                    "Comparison · left and right result analysis",
+                    exact=True,
+                ).wait_for()
+                assert page.get_by_text("Left total", exact=True).is_visible()
+                assert page.get_by_text("Right total", exact=True).is_visible()
+            finally:
+                browser.close()
+    finally:
+        server.terminate()
+        try:
+            server.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            server.kill()
+            server.wait(timeout=10)

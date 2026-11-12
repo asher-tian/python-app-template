@@ -1,0 +1,37 @@
+export async function requestJson(url, options = {}) {
+  const response = await fetch(url, options);
+  const contentType = response.headers.get("content-type") || "";
+  let payload = null;
+
+  if (contentType.includes("application/json")) {
+    payload = await response.json();
+  } else if (response.status !== 204) {
+    payload = await response.text();
+  }
+
+  if (!response.ok) {
+    const message = payload && typeof payload === "object"
+      ? payload.detail || payload.message
+      : payload;
+    throw new Error(message || response.statusText || "Request failed");
+  }
+
+  return payload;
+}
+
+export function getQueryNumber(name, fallback = 1) {
+  const value = Number(new URLSearchParams(window.location.search).get(name));
+  return Number.isInteger(value) && value > 0 ? value : fallback;
+}
+
+export function setQueryParams(values) {
+  const url = new URL(window.location.href);
+  for (const [key, value] of Object.entries(values)) {
+    if (value === null || value === undefined || value === "") {
+      url.searchParams.delete(key);
+    } else {
+      url.searchParams.set(key, String(value));
+    }
+  }
+  window.history.replaceState({}, "", url);
+}

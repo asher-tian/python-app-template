@@ -1,0 +1,34 @@
+export function createPagination({ page, totalPages, onPageChange }) {
+  if (!Number.isFinite(totalPages) || totalPages <= 1) {
+    return null;
+  }
+
+  const navigation = document.createElement("nav");
+  navigation.className = "d-flex flex-wrap align-items-center justify-content-between gap-2 mt-3";
+  navigation.setAttribute("aria-label", "Dataset pagination");
+
+  const description = document.createElement("span");
+  description.className = "small text-secondary";
+  description.textContent = "Page " + page + " of " + totalPages;
+
+  const controls = document.createElement("div");
+  controls.className = "btn-group btn-group-sm";
+
+  const previous = document.createElement("button");
+  previous.type = "button";
+  previous.className = "btn btn-outline-secondary";
+  previous.textContent = "Previous";
+  previous.disabled = page <= 1;
+  previous.addEventListener("click", () => onPageChange(page - 1));
+
+  const next = document.createElement("button");
+  next.type = "button";
+  next.className = "btn btn-outline-secondary";
+  next.textContent = "Next";
+  next.disabled = page >= totalPages;
+  next.addEventListener("click", () => onPageChange(page + 1));
+
+  controls.append(previous, next);
+  navigation.append(description, controls);
+  return navigation;
+}

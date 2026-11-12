@@ -1,0 +1,113 @@
+import { requestJson } from "../api.js";
+import { createStatusBadge, createTextElement, formatDate } from "../shared/format.js";
+
+function renderGroupCard(group, businessId) {
+  const column = document.createElement("div");
+  column.className = "col-12 col-md-6 col-xl-4";
+
+  const card = document.createElement("article");
+  card.className = "card group-card h-100";
+
+  const body = document.createElement("div");
+  body.className = "card-body";
+
+  const heading = document.createElement("div");
+  heading.className = "d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2";
+
+  const canOpen = Boolean(group.latest_run_id || group.latest_attempt_run_id);
+  const title = document.createElement(canOpen ? "a" : "span");
+  title.className = "group-title";
+  title.textContent = group.label;
+  if (canOpen) {
+    title.href = "/businesses/" + encodeURIComponent(businessId) +
+      "/groups/" + encodeURIComponent(group.group_id);
+  }
+
+  heading.append(title, createStatusBadge(group.latest_status));
+
+  const details = createTextElement(
+    "p",
+    "small text-secondary mb-0",
+    (group.runs_count || 0) + " Runs · Last attempt " + formatDate(group.latest_attempt_at)
+  );
+  body.append(heading, details);
+
+  if (group.latest_error) {
+    body.append(createTextElement("p", "small text-danger mt-2 mb-0", group.latest_error));
+  }
+
+  card.append(body);
+  column.append(card);
+  return column;
+}
+
+export async function renderHome(root) {
+  const businesses = await requestJson("/api/businesses");
+  root.replaceChildren();
+
+  const heading = document.createElement("div");
+  heading.className = "page-heading mb-4";
+  heading.append(
+    createTextElement("p", "eyebrow", "LOCAL DATA WORKSPACE"),
+    createTextElement("h1", "display-6 fw-semibold mb-2", "Reports"),
+    createTextElement(
+      "p",
+      "text-secondary mb-0",
+      "Browse analysis results by Business, Group and Run."
+    )
+  );
+  root.append(heading);
+
+  if (!businesses.length) {
+    const empty = document.createElement("div");
+    empty.className = "card report-card";
+    const body = document.createElement("div");
+    body.className = "card-body empty-state";
+    body.append(
+      createTextElement("h2", "h5", "No reports yet"),
+      createTextElement(
+        "p",
+        "text-secondary mb-0",
+        "Run an analysis command to create the first report."
+      )
+    );
+    empty.append(body);
+    root.append(empty);
+    return;
+  }
+
+  for (const business of businesses) {
+    const section = document.createElement("section");
+    section.className = "card report-card mb-4";
+
+    const body = document.createElement("div");
+    body.className = "card-body p-4";
+
+    const header = document.createElement("div");
+    header.className = "d-flex flex-wrap align-items-start justify-content-between gap-3 mb-3";
+
+    const titleGroup = document.createElement("div");
+    titleGroup.append(
+      createTextElement("p", "eyebrow mb-1", "BUSINESS"),
+      createTextElement("h2", "h5 mb-1", business.name),
+      createTextElement("p", "text-secondary small mb-0", business.description || "")
+    );
+
+    const count = createTextElement(
+      "span",
+      "small text-secondary",
+      (business.groups || []).length + " Groups"
+    );
+    header.append(titleGroup, count);
+
+    const grid = document.createElement("div");
+    grid.className = "row g-3";
+    for (const group of business.groups || []) {
+      grid.append(renderGroupCard(group, business.business_id));
+    }
+
+    body.append(header, grid);
+    section.append(body);
+    root.append(section);
+  }
+}

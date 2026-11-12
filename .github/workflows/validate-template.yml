@@ -18,6 +18,10 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
       - name: Install Copier
         run: python -m pip install --disable-pip-version-check "copier>=9,<10"
 
@@ -57,9 +61,17 @@ jobs:
       - name: Validate report frontend JavaScript
         working-directory: generated
         run: |
-          node --check src/template_validation/report/frontend/report.js
-          node --input-type=module --check < src/template_validation/report/frontend/businesses/analysis.js
-          node --input-type=module --check < src/template_validation/report/frontend/businesses/comparison.js
+          node --input-type=module --check < src/template_validation/report/frontend/js/app.js
+          node --input-type=module --check < src/template_validation/report/frontend/js/api.js
+          node --input-type=module --check < src/template_validation/report/frontend/js/pages/home.js
+          node --input-type=module --check < src/template_validation/report/frontend/js/pages/report.js
+          node --input-type=module --check < src/template_validation/report/frontend/js/shared/format.js
+          node --input-type=module --check < src/template_validation/report/frontend/js/shared/metrics.js
+          node --input-type=module --check < src/template_validation/report/frontend/js/shared/pagination.js
+          node --input-type=module --check < src/template_validation/report/frontend/js/shared/table.js
+          node --input-type=module --check < src/template_validation/report/frontend/js/shared/chart.js
+          node --input-type=module --check < src/template_validation/report/frontend/js/businesses/analysis.js
+          node --input-type=module --check < src/template_validation/report/frontend/js/businesses/comparison.js
 
       - name: Run both Business commands
         working-directory: generated
@@ -90,3 +102,49 @@ jobs:
       - name: HTTP CLI smoke test
         working-directory: generated
         run: uv run template_validation http --help
+
+
+  frontend-browser-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install Copier
+        run: python -m pip install --disable-pip-version-check "copier>=9,<10"
+
+      - name: Generate project from template
+        run: >-
+          copier copy --defaults
+          --data "project_name=Template Validation"
+          --data "project_slug=template-validation"
+          --data "package_name=template_validation"
+          --data "python_version=3.13"
+          . ./generated
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Install project dependencies
+        working-directory: generated
+        run: uv sync --all-groups
+
+      - name: Generate sample reports
+        working-directory: generated
+        run: |
+          uv run template_validation analysis --config analysis.cfg
+          uv run template_validation comparison --config comparison.cfg
+
+      - name: Install Chromium
+        working-directory: generated
+        run: uv run --with playwright playwright install --with-deps chromium
+
+      - name: Run browser smoke test
+        working-directory: generated
+        env:
+          RUN_BROWSER_SMOKE: "1"
+        run: uv run --with playwright pytest tests/test_frontend_browser.py

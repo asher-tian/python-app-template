@@ -38,12 +38,21 @@ HTTP 是模板的必备能力。执行分析任务时不会自动启动服务；
 
 - **CLI** 负责参数解析、配置加载、Run 生命周期和 Group 并发；多 Group 按需使用 ThreadPoolExecutor。
 - **Core** 只包含业务规则和流程，不依赖 CLI、HTTP、Report、Store 或具体文件布局。
-- **Report** 按 Business 实现报告和数据输出，从 Run 记录聚合 Business → Group → Run 导航；latest successful Run 动态计算，不写共享索引。业务报告通过 `report_kind` 显式加载 `report/frontend/businesses/` 下的独立展示模块，不使用动态 Registry。
+- **Report** 按 Business 实现报告和数据输出，从 Run 记录聚合 Business → Group → Run 导航；latest successful Run 动态计算，不写共享索引。业务报告通过 `report_kind` 显式加载 `report/frontend/js/businesses/` 下的独立展示模块，不使用动态 Registry。
 - **Store** 只负责 workpath、相对路径安全解析、通用文件操作和 Run 记录，不创建固定业务目录。
 - **HTTP** 是必备的本地报告访问入口，默认只监听 127.0.0.1；提供报告导航、分页 Run 历史、Run 配置与环境详情、Dataset 分页访问和业务二次分析，不直接暴露整个 workpath。HTTP 服务按需启动，不需要随每次 CLI 分析任务自动运行。
+
+### Report Frontend V1
+
+- Bootstrap 5.3.3 CSS + 原生 JavaScript ES Modules + Apache ECharts 5.6.0。
+- Bootstrap 与 ECharts 静态资源随模板本地提供，不使用 CDN；ECharts 在业务页面首次请求图表时按需加载。
+- 不引入 Vue、React、jQuery、Vite 或前端状态管理框架；生成项目不需要 Node.js 运行环境或前端构建步骤。
+- `js/pages` 负责页面编排，`js/shared` 负责通用展示能力，`js/businesses` 负责 Business 专属视图。
+- 前端只通过 HTTP API 获取数据，不直接读取 workpath 中的文件。大型 Dataset 由服务端分页，浏览器只加载当前页。
+- Node.js 仅用于 CI 中的 JavaScript 语法检查。CI 另设 Playwright + Chromium 浏览器 Smoke Test，覆盖首页、Analysis、Comparison 和二次分析；Playwright 不进入生成项目的依赖。
 
 大表格 Dataset 使用 JSONL 按行存储，通过 HTTP 分页读取；每次请求默认返回 50 条，最大 200 条。小型统计结果继续使用 JSON。前端只请求当前页，不会下载完整 Dataset 后再截取。
 
 workpath 是应用工作目录。全局配置 app.cfg 的 workspace.run_records_dir 指定唯一通用 Run 记录目录，默认是 .app/runs。每次执行创建独立目录，保存 run.json，以及 logs/run.log、logs/run.jsonl 和各 Group 对应的日志文件。run.json 保存有效配置、配置来源、运行环境、Group 结果、开始结束时间和异常摘要；敏感配置字段会递归脱敏。
 
-每个 Business 在自己的 TOML 配置中通过 paths 声明数据、报告和中间产物目录。业务内部目录结构由 Business 自行决定；不同 Business 可以使用相同 Group ID 或 Label。模板不建立 workspace.json、business.json、Group Manifest、Runtime、Bootstrap、通用 DAG、Task Registry 或分布式 Worker。
+每个 Business 在自己的 TOML 配置中通过 paths 声明数据、报告和中间产物目录。业务内部目录结构由 Business 自行决定；不同 Business 可以使用相同 Group ID 或 Label。模板不建立 workspace.json、business.json、Group Manifest、Runtime、应用启动引导器（Bootstrapper）、通用 DAG、Task Registry 或分布式 Worker。

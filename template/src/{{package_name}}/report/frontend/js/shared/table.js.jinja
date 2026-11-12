@@ -1,0 +1,139 @@
+import { requestJson, setQueryParams } from "../api.js";
+import { displayValue } from "./format.js";
+import { createPagination } from "./pagination.js";
+
+const PAGE_SIZE = 50;
+
+function renderTable(records, columns) {
+  const wrapper = document.createElement("div");
+  wrapper.className = "table-responsive";
+
+  if (!columns.length) {
+    const empty = document.createElement("p");
+    empty.className = "text-secondary mb-0";
+    empty.textContent = "This Dataset contains no tabular records.";
+    wrapper.append(empty);
+    return wrapper;
+  }
+
+  const table = document.createElement("table");
+  table.className = "table table-sm table-hover align-middle mb-0";
+
+  const head = document.createElement("thead");
+  const headerRow = document.createElement("tr");
+  for (const column of columns) {
+    const cell = document.createElement("th");
+    cell.scope = "col";
+    cell.textContent = column;
+    headerRow.append(cell);
+  }
+  head.append(headerRow);
+
+  const body = document.createElement("tbody");
+  for (const record of records) {
+    const row = document.createElement("tr");
+    for (const column of columns) {
+      const cell = document.createElement("td");
+      cell.textContent = displayValue(record[column]);
+      row.append(cell);
+    }
+    body.append(row);
+  }
+
+  table.append(head, body);
+  wrapper.append(table);
+  return wrapper;
+}
+
+export async function renderDataset({ reference, baseUrl, runId, initialPage = 1 }) {
+  const section = document.createElement("section");
+  section.className = "card report-card mb-4";
+
+  const heading = document.createElement("div");
+  heading.className = "card-header d-flex flex-wrap align-items-center justify-content-between gap-2";
+
+  const title = document.createElement("h2");
+  title.className = "h6 mb-0";
+  title.textContent = reference.title;
+
+  const count = document.createElement("span");
+  count.className = "small text-secondary";
+  count.textContent = reference.row_count === undefined
+    ? (reference.format || "dataset")
+    : Number(reference.row_count).toLocaleString() + " records";
+
+  heading.append(title, count);
+
+  const body = document.createElement("div");
+  body.className = "card-body";
+  section.append(heading, body);
+
+  async function loadPage(page) {
+    body.replaceChildren();
+    const loading = document.createElement("p");
+    loading.className = "text-secondary mb-0";
+    loading.textContent = "Loading records…";
+    body.append(loading);
+
+    const query = new URLSearchParams({
+      run_id: runId,
+      page: String(page),
+      page_size: String(PAGE_SIZE)
+    });
+    const result = await requestJson(
+      baseUrl + "/datasets/" + encodeURIComponent(reference.id) + "?" + query
+    );
+
+    body.replaceChildren();
+    if (!Array.isArray(result.records)) {
+      const pre = document.createElement("pre");
+      pre.className = "dataset-json mb-0";
+      pre.textContent = JSON.stringify(result.data, null, 2);
+      body.append(pre);
+      return;
+    }
+
+    const start = result.total_records === 0
+      ? 0
+      : (result.page - 1) * result.page_size + 1;
+    const end = Math.min(result.page * result.page_size, result.total_records);
+    const range = document.createElement("p");
+    range.className = "small text-secondary mb-3";
+    range.textContent = "Showing " + start + "–" + end + " of " +
+      Number(result.total_records).toLocaleString() + " records";
+
+    body.append(range, renderTable(result.records, result.columns || []));
+
+    const pagination = createPagination({
+      page: result.page,
+      totalPages: result.total_pages,
+      onPageChange: async (nextPage) => {
+        const queryKey = "dataset_" + reference.id + "_page";
+        setQueryParams({[queryKey]: nextPage === 1 ? null : nextPage});
+        try {
+          await loadPage(nextPage);
+        } catch (error) {
+          renderError(error);
+        }
+      }
+    });
+    if (pagination) {
+      body.append(pagination);
+    }
+  }
+
+  function renderError(error) {
+    const alert = document.createElement("div");
+    alert.className = "alert alert-danger mb-0";
+    alert.textContent = "Unable to load Dataset: " + error.message;
+    body.replaceChildren(alert);
+  }
+
+  try {
+    await loadPage(initialPage);
+  } catch (error) {
+    renderError(error);
+  }
+
+  return section;
+}

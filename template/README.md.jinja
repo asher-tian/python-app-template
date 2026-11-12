@@ -27,7 +27,16 @@ HTTP 报告服务提供 Business → Group → Run 导航：
 - Group 页面展示统计摘要、Run 历史、脱敏后的有效配置和执行环境。
 - Run 历史支持分页；失败 Run 仍可查看错误和执行元数据。
 - 大型表格 Dataset 使用 JSONL 按行存储，通过 API 分页读取。默认每页 50 条，最大 200 条；小型统计结果使用 JSON。
-- Analysis 和 Comparison 分别使用 `report/frontend/businesses/analysis.js` 与 `comparison.js`。新增 Business 可以拥有自己的展示模块、报告构建逻辑和 Dataset，不要求复用相同的内容布局。
+- Analysis 和 Comparison 分别使用 `report/frontend/js/businesses/analysis.js` 与 `comparison.js`。新增 Business 可以拥有自己的展示模块、报告构建逻辑和 Dataset，不要求复用相同的内容布局。
+
+## Report Frontend V1
+
+- Bootstrap 5.3.3 CSS + 原生 JavaScript ES Modules + Apache ECharts 5.6.0。
+- 第三方资源保存在 `report/frontend/vendor/`，不使用 CDN；ECharts 在需要绘图时按需加载。
+- 不引入 Vue、React、jQuery、Vite 或前端状态管理框架。运行生成项目不需要 Node.js 或前端构建步骤。
+- `report/frontend/js/pages/` 负责页面编排，`shared/` 负责通用 UI，`businesses/` 负责业务展示。
+- 前端通过 HTTP API 访问数据，不直接读取 workpath 文件；大型 Dataset 由服务端分页。
+- Node.js 仅用于 CI 中的 JS 语法检查。CI 另设 Playwright + Chromium 浏览器 Smoke Test，验证首页、业务报告和二次分析交互；Playwright 不进入生成项目的依赖。
 
 ## 模板结构与架构
 
@@ -46,4 +55,4 @@ HTTP 报告服务提供 Business → Group → Run 导航：
 
 workpath 是应用工作目录。app.cfg 的 workspace.run_records_dir 指定唯一通用 Run 记录目录，默认是 .app/runs。每次执行创建独立目录，保存 run.json，以及 logs/run.log、logs/run.jsonl 和各 Group 对应的日志文件。run.json 保存有效配置、配置来源、运行环境、Group 结果、开始结束时间和异常摘要；敏感配置字段会递归脱敏。
 
-每个 Business 在自己的 TOML 配置中通过 paths 声明数据、报告和中间产物目录。业务内部目录结构由 Business 自行决定；不同 Business 可以使用相同 Group ID 或 Label。模板不建立 workspace.json、business.json、Group Manifest、Runtime、Bootstrap、通用 DAG、Task Registry 或分布式 Worker。
+每个 Business 在自己的 TOML 配置中通过 paths 声明数据、报告和中间产物目录。业务内部目录结构由 Business 自行决定；不同 Business 可以使用相同 Group ID 或 Label。模板不建立 workspace.json、business.json、Group Manifest、Runtime、应用启动引导器（Bootstrapper）、通用 DAG、Task Registry 或分布式 Worker。
