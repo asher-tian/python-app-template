@@ -57,7 +57,7 @@
 - V1 使用 Bootstrap 5.3.3 CSS、原生 JavaScript ES Modules 和 Apache ECharts 5.6.0。
 - 第三方浏览器资源必须固定版本并放在 report/frontend/vendor；保留上游许可证信息，不依赖 CDN。
 - 不引入 Vue、React、jQuery、Vite、SPA Router 或全局状态管理库。
-- 生成项目的运行和 HTTP 服务启动不得依赖 Node.js 或前端构建步骤；Node.js 仅可用于 CI 的语法检查；CI 使用临时 Playwright + Chromium 环境验证关键浏览器交互，不将 Playwright 加入生成项目依赖。
+- 生成项目的运行和 HTTP 服务启动不得依赖 Node.js 或前端构建步骤；CI 在 Python 3.12、3.13、3.14 上验证模板，仅在 Python 3.13 Job 中使用临时 Playwright + Chromium 环境验证关键浏览器交互，不将 Playwright 加入生成项目依赖。
 - 页面入口由 js/app.js 显式分发到 js/pages；业务视图由 js/pages/report.js 显式分发到 js/businesses，不建立动态组件 Registry。
 - js/shared 只放跨页面或跨 Business 确实重复的 API、表格、分页、指标、图表和格式化能力。
 - 使用 DOM API 和 textContent 渲染 API 数据；不得把未转义的外部数据拼入 innerHTML。

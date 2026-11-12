@@ -49,7 +49,7 @@ HTTP 是模板的必备能力。执行分析任务时不会自动启动服务；
 - 不引入 Vue、React、jQuery、Vite 或前端状态管理框架；生成项目不需要 Node.js 运行环境或前端构建步骤。
 - `js/pages` 负责页面编排，`js/shared` 负责通用展示能力，`js/businesses` 负责 Business 专属视图。
 - 前端只通过 HTTP API 获取数据，不直接读取 workpath 中的文件。大型 Dataset 由服务端分页，浏览器只加载当前页。
-- Node.js 仅用于 CI 中的 JavaScript 语法检查。CI 另设 Playwright + Chromium 浏览器 Smoke Test，覆盖首页、Analysis、Comparison 和二次分析；Playwright 不进入生成项目的依赖。
+- CI 在 Python 3.12、3.13、3.14 上生成项目并运行测试；仅在 Python 3.13 Job 中执行一次 Playwright + Chromium 浏览器 Smoke Test，覆盖首页、Analysis、Comparison 和二次分析。Playwright 不进入生成项目的依赖，生成项目不需要 Node.js 或前端构建步骤。
 
 大表格 Dataset 使用 JSONL 按行存储，通过 HTTP 分页读取；每次请求默认返回 50 条，最大 200 条。小型统计结果继续使用 JSON。前端只请求当前页，不会下载完整 Dataset 后再截取。
 

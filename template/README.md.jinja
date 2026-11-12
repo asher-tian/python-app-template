@@ -36,7 +36,7 @@ HTTP 报告服务提供 Business → Group → Run 导航：
 - 不引入 Vue、React、jQuery、Vite 或前端状态管理框架。运行生成项目不需要 Node.js 或前端构建步骤。
 - `report/frontend/js/pages/` 负责页面编排，`shared/` 负责通用 UI，`businesses/` 负责业务展示。
 - 前端通过 HTTP API 访问数据，不直接读取 workpath 文件；大型 Dataset 由服务端分页。
-- Node.js 仅用于 CI 中的 JS 语法检查。CI 另设 Playwright + Chromium 浏览器 Smoke Test，验证首页、业务报告和二次分析交互；Playwright 不进入生成项目的依赖。
+- CI 在 Python 3.12、3.13、3.14 上生成项目并运行测试；仅在 Python 3.13 Job 中执行一次 Playwright + Chromium 浏览器 Smoke Test，验证首页、业务报告和二次分析交互。Playwright 不进入生成项目的依赖，生成项目不需要 Node.js 或前端构建步骤。
 
 ## 模板结构与架构
 
