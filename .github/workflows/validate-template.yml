@@ -54,6 +54,10 @@ jobs:
         working-directory: generated
         run: uv run pytest
 
+      - name: Validate report frontend JavaScript
+        working-directory: generated
+        run: node --check src/template_validation/report/frontend/report.js
+
       - name: Run both Business commands
         working-directory: generated
         run: |

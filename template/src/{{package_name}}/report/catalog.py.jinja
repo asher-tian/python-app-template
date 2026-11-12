@@ -167,13 +167,37 @@ class ReportCatalog:
         if not matches:
             raise FileNotFoundError(f"Unknown Group {business_id}/{group_id}")
 
-        selected_record, selected_group = (
-            self.group_run(business_id, group_id, run_id)
-            if run_id
-            else self.latest_group_run(business_id, group_id)
-        )
+        if run_id:
+            selected_match = next(
+                ((record, group) for record, group in matches if record.run_id == run_id),
+                None,
+            )
+            if selected_match is None:
+                raise FileNotFoundError(
+                    f"Run {run_id!r} was not found for {business_id}/{group_id}"
+                )
+            selected_record, selected_group = selected_match
+        else:
+            latest_success = next(
+                (
+                    (record, group)
+                    for record, group in reversed(matches)
+                    if group.status == "success" and group.report_entry
+                ),
+                None,
+            )
+            selected_record, selected_group = latest_success or matches[-1]
+
         latest_attempt_record, latest_attempt_group = matches[-1]
-        latest_success_record, _ = self.latest_group_run(business_id, group_id)
+        latest_success = next(
+            (
+                (record, group)
+                for record, group in reversed(matches)
+                if group.status == "success" and group.report_entry
+            ),
+            None,
+        )
+        latest_success_record = latest_success[0] if latest_success else None
 
         all_history = [
             {
@@ -204,7 +228,7 @@ class ReportCatalog:
             "group": {
                 "group_id": group_id,
                 "label": latest_attempt_group.label,
-                "latest_run_id": latest_success_record.run_id,
+                "latest_run_id": latest_success_record.run_id if latest_success_record else None,
                 "latest_status": latest_attempt_group.status,
                 "latest_attempt_run_id": latest_attempt_record.run_id,
                 "latest_attempt_at": latest_attempt_record.started_at,
@@ -310,7 +334,7 @@ class ReportCatalog:
             "page": page,
             "page_size": page_size,
             "total_records": total,
-            "total_pages": ceil(total / page_size) if total else 0,
+            "total_pages": max(1, ceil(total / page_size)),
             "columns": columns,
             "records": records,
         }

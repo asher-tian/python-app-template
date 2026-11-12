@@ -105,18 +105,19 @@ def read_jsonl_page(
     start = (page - 1) * page_size
     stop = start + page_size
     records: list[dict[str, Any]] = []
+    record_index = 0
     with path.open("r", encoding="utf-8") as stream:
-        for line_number, line in enumerate(stream):
-            if line_number < start:
-                continue
-            if line_number >= stop:
-                break
+        for line_number, line in enumerate(stream, start=1):
             if not line.strip():
                 continue
-            value = json.loads(line)
-            if not isinstance(value, dict):
-                raise ValueError(f"JSONL record at line {line_number + 1} must be an object")
-            records.append(value)
+            if record_index >= start and record_index < stop:
+                value = json.loads(line)
+                if not isinstance(value, dict):
+                    raise ValueError(f"JSONL record at line {line_number} must be an object")
+                records.append(value)
+            record_index += 1
+            if record_index >= stop:
+                break
     return records, total
 
 

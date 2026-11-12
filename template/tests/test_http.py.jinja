@@ -5,6 +5,9 @@ from {{ package_name }}.cli.commands.http import _require_loopback
 from {{ package_name }}.cli.commands.analysis import execute as execute_analysis
 from {{ package_name }}.cli.commands.comparison import execute as execute_comparison
 from {{ package_name }}.http.app import create_app
+from {{ package_name }}.report.models import GroupRunResult
+from {{ package_name }}.store.run_record import RunRecordStore
+from {{ package_name }}.store.workspace import Workspace
 
 
 def _write_configs(tmp_path):
@@ -136,3 +139,43 @@ def test_http_host_is_loopback_only_and_ipv6_url_is_bracketed():
 
     with pytest.raises(ValueError, match="loopback"):
         _require_loopback("0.0.0.0")
+
+
+
+def test_failed_only_group_remains_browsable(tmp_path):
+    workspace = Workspace(tmp_path / "workspace")
+    workspace.initialize()
+    run = RunRecordStore(
+        workspace,
+        run_id="failed-run",
+        command="analysis",
+        business_id="analysis",
+        business_name="Analysis",
+        config_source="analysis.cfg",
+        effective_config={"business": {"paths": {}}},
+    )
+    failed = GroupRunResult(
+        group_id="alpha",
+        label="Alpha",
+        status="failed",
+        report_kind="analysis",
+        error="intentional test failure",
+    )
+    run.finish([failed.model_dump(mode="json")], "failed", error="intentional test failure")
+
+    client = TestClient(create_app(tmp_path / "workspace"))
+    response = client.get("/businesses/analysis/groups/alpha")
+    assert response.status_code == 200
+    assert 'data-business-id="analysis"' in response.text
+
+    context = client.get("/api/businesses/analysis/groups/alpha").json()
+    assert context["group"]["latest_run_id"] is None
+    assert context["latest_run"]["run_id"] == "failed-run"
+    assert context["latest_run"]["status"] == "failed"
+    assert context["latest_run"]["error"] == "intentional test failure"
+
+    historical = client.get(
+        "/businesses/analysis/groups/alpha/runs/failed-run"
+    )
+    assert historical.status_code == 200
+    assert 'data-run-id="failed-run"' in historical.text

@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import json
 import uuid
+from html import escape
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -44,6 +45,24 @@ def create_app(
 
     def not_found(exc: Exception) -> HTTPException:
         return HTTPException(status_code=404, detail=str(exc))
+
+    def report_shell(
+        business_id: str,
+        group_id: str,
+        run_id: str | None = None,
+    ) -> HTMLResponse:
+        selected_run = f' data-run-id="{escape(run_id)}"' if run_id else ""
+        return HTMLResponse(
+            "<!doctype html><html lang='en'><head>"
+            "<meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1'>"
+            "<title>Report</title><link rel='stylesheet' href='/assets/style.css'>"
+            "<script src='/assets/report.js' defer></script></head><body>"
+            "<header><a href='/'>Report Home</a></header>"
+            "<main id='app' data-page='report'"
+            f' data-business-id="{escape(business_id)}"'
+            f' data-group-id="{escape(group_id)}"{selected_run}>'
+            "<p>Loading report…</p></main></body></html>"
+        )
 
     @app.get("/")
     def home() -> FileResponse:
@@ -111,17 +130,29 @@ def create_app(
             raise not_found(exc) from exc
 
     @app.get("/businesses/{business_id}/groups/{group_id}")
-    def report_page(business_id: str, group_id: str) -> FileResponse:
+    def report_page(business_id: str, group_id: str):
         try:
             return FileResponse(catalog.report_path(business_id, group_id))
-        except (FileNotFoundError, ValueError, json.JSONDecodeError) as exc:
+        except FileNotFoundError:
+            try:
+                catalog.group_context(business_id, group_id)
+                return report_shell(business_id, group_id)
+            except (FileNotFoundError, ValueError, json.JSONDecodeError) as exc:
+                raise not_found(exc) from exc
+        except (ValueError, json.JSONDecodeError) as exc:
             raise not_found(exc) from exc
 
     @app.get("/businesses/{business_id}/groups/{group_id}/runs/{run_id}")
-    def historical_report_page(business_id: str, group_id: str, run_id: str) -> FileResponse:
+    def historical_report_page(business_id: str, group_id: str, run_id: str):
         try:
             return FileResponse(catalog.report_path(business_id, group_id, run_id))
-        except (FileNotFoundError, ValueError, json.JSONDecodeError) as exc:
+        except FileNotFoundError:
+            try:
+                catalog.group_context(business_id, group_id, run_id)
+                return report_shell(business_id, group_id, run_id)
+            except (FileNotFoundError, ValueError, json.JSONDecodeError) as exc:
+                raise not_found(exc) from exc
+        except (ValueError, json.JSONDecodeError) as exc:
             raise not_found(exc) from exc
 
     @app.post("/api/businesses/{business_id}/groups/{group_id}/analysis")

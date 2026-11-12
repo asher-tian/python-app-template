@@ -114,7 +114,10 @@
       "<div><span class='muted'>Started</span><strong>" + escapeHtml(formatDate(run.started_at)) + "</strong></div>" +
       "<div><span class='muted'>Finished</span><strong>" + escapeHtml(formatDate(run.finished_at)) + "</strong></div>" +
       "<div><span class='muted'>Status</span><strong>" + escapeHtml(run.status) + "</strong></div>" +
-      "</div><details><summary>Effective configuration (secrets redacted)</summary><pre>" +
+      "</div>" + (run.error
+        ? "<div class='notice notice-warning'>" + escapeHtml(run.error) + "</div>"
+        : "") +
+      "<details><summary>Effective configuration (secrets redacted)</summary><pre>" +
       escapeHtml(config) + "</pre></details><details><summary>Execution environment</summary><pre>" +
       escapeHtml(environment) + "</pre></details></section>";
   }
@@ -187,7 +190,7 @@
       const groups = business.groups.map((group) => {
         const status = "<span class='" + statusClass(group.latest_status) + "'>" +
           escapeHtml(group.latest_status) + "</span>";
-        const href = group.latest_run_id
+        const href = group.latest_run_id || group.latest_attempt_run_id
           ? "/businesses/" + encodeURIComponent(business.business_id) +
             "/groups/" + encodeURIComponent(group.group_id)
           : null;
@@ -240,8 +243,11 @@
       " · Group " + escapeHtml(groupId) + "</p></div>";
 
     if (group.latest_status === "failed") {
+      const message = run.status === "failed"
+        ? "No successful report is available for this Group yet. Showing the latest failed Run."
+        : "The latest attempt failed. Showing the most recent successful report.";
       root.insertAdjacentHTML("beforeend",
-        "<div class='notice notice-warning'>The latest attempt failed. Showing the most recent successful report.</div>");
+        "<div class='notice notice-warning'>" + message + "</div>");
     }
 
     const summary = document.createElement("section");
