@@ -66,8 +66,10 @@ def test_report_web_browser_smoke():
                 page.wait_for_load_state("networkidle")
                 assert page.locator(".run-history-item").count() >= 2
 
-                page.goto(base_url, wait_until="networkidle")
-                page.locator(".group-title").nth(1).click()
+                page.goto(
+                    base_url + "/businesses/comparison/groups/alpha",
+                    wait_until="networkidle",
+                )
                 page.get_by_text(
                     "Comparison · left and right result analysis",
                     exact=True,
