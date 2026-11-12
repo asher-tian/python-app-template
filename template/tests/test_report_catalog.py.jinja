@@ -1,5 +1,6 @@
 from {{ package_name }}.report.catalog import ReportCatalog
 from {{ package_name }}.report.models import DatasetReference, GroupRunResult
+from {{ package_name }}.store.files import write_jsonl
 from {{ package_name }}.store.run_record import RunRecordStore
 from {{ package_name }}.store.workspace import Workspace
 
@@ -105,3 +106,97 @@ def test_failed_run_does_not_replace_latest_successful_group_run(tmp_path):
     assert detail["group"]["latest_status"] == "failed"
     assert len(detail["group"]["runs"]) == 2
     assert catalog.dataset("analysis", "alpha", "summary") == {"value": 7}
+
+
+
+def test_run_history_is_paginated(tmp_path):
+    workspace = Workspace(tmp_path / "work")
+    workspace.initialize()
+    for index in range(1, 4):
+        _write_run(
+            workspace,
+            run_id=f"run-{index}",
+            business_id="analysis",
+            business_name="Analysis",
+            group_id="alpha",
+            label="Alpha",
+        )
+
+    catalog = ReportCatalog(workspace)
+    first_page = catalog.group_context(
+        "analysis",
+        "alpha",
+        history_page=1,
+        history_page_size=1,
+    )
+    second_page = catalog.group_context(
+        "analysis",
+        "alpha",
+        history_page=2,
+        history_page_size=1,
+    )
+
+    assert first_page["group"]["runs_count"] == 3
+    assert first_page["group"]["history_total_pages"] == 3
+    assert [item["run_id"] for item in first_page["group"]["runs"]] == ["run-3"]
+    assert [item["run_id"] for item in second_page["group"]["runs"]] == ["run-2"]
+
+
+def test_jsonl_dataset_pages_are_bounded_and_run_detail_is_redacted(tmp_path):
+    workspace = Workspace(tmp_path / "work")
+    workspace.initialize()
+    records = [{"value": value} for value in range(125)]
+    dataset_path = "analysis/data/alpha/run-page/records.jsonl"
+    report_path = "analysis/reports/alpha/run-page/index.html"
+    write_jsonl(workspace.root, dataset_path, records)
+    report_file = workspace.resolve(report_path)
+    report_file.parent.mkdir(parents=True, exist_ok=True)
+    report_file.write_text("<html></html>", encoding="utf-8")
+
+    run = RunRecordStore(
+        workspace,
+        run_id="run-page",
+        command="analysis",
+        business_id="analysis",
+        business_name="Analysis",
+        config_source="analysis.cfg",
+        effective_config={
+            "business": {"paths": {"reports": "analysis/reports"}},
+            "api_token": "must-not-be-returned",
+        },
+    )
+    group = GroupRunResult(
+        group_id="alpha",
+        label="Alpha",
+        status="success",
+        report_entry=report_path,
+        report_kind="analysis",
+        datasets=[
+            DatasetReference(
+                id="records",
+                title="Records",
+                path=dataset_path,
+                format="jsonl",
+                row_count=len(records),
+            )
+        ],
+        summary={"item_count": len(records)},
+    )
+    run.finish([group.model_dump(mode="json")], "success")
+
+    catalog = ReportCatalog(workspace)
+    page = catalog.dataset_page(
+        "analysis",
+        "alpha",
+        "records",
+        "run-page",
+        page=2,
+        page_size=50,
+    )
+    assert page["total_records"] == 125
+    assert page["total_pages"] == 3
+    assert [item["value"] for item in page["records"]] == list(range(50, 100))
+
+    detail = catalog.run_detail("analysis", "alpha", "run-page")
+    assert detail["report_kind"] == "analysis"
+    assert detail["configuration"]["effective_config"]["api_token"] == "[REDACTED]"

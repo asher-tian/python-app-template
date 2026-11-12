@@ -52,15 +52,19 @@ def test_http_discovers_from_run_records_and_persists_secondary_analysis(tmp_pat
     analysis_group = client.get("/api/businesses/analysis/groups/alpha").json()
     comparison_group = client.get("/api/businesses/comparison/groups/alpha").json()
     assert analysis_group["group"]["label"] == comparison_group["group"]["label"] == "alpha"
+    assert analysis_group["latest_run"]["report_kind"] == "analysis"
+    assert comparison_group["latest_run"]["report_kind"] == "comparison"
 
     page = client.get("/businesses/analysis/groups/alpha")
     assert page.status_code == 200
     assert 'data-business-id="analysis"' in page.text
 
     dataset = client.get(
-        "/api/businesses/analysis/groups/alpha/datasets/records"
+        "/api/businesses/analysis/groups/alpha/datasets/records?page=1&page_size=2"
     ).json()
-    assert len(dataset["records"]) == 5
+    assert len(dataset["records"]) == 2
+    assert dataset["total_records"] == 5
+    assert dataset["total_pages"] == 3
 
     response = client.post(
         "/api/businesses/analysis/groups/alpha/analysis",
@@ -85,6 +89,14 @@ def test_http_discovers_from_run_records_and_persists_secondary_analysis(tmp_pat
     updated = client.get("/api/businesses/analysis/groups/alpha").json()
     assert updated["latest_run"]["run_id"] == response.json()["run_id"]
     assert len(updated["group"]["runs"]) == 2
+    assert updated["group"]["runs_count"] == 2
+    run_detail = client.get(
+        "/api/businesses/analysis/groups/alpha/runs/" + response.json()["run_id"]
+    ).json()
+    assert run_detail["report_kind"] == "analysis"
+    assert run_detail["configuration"]["effective_config"]["source_run_id"] == (
+        analysis_group["latest_run"]["run_id"]
+    )
 
     unsupported = client.post(
         "/api/businesses/comparison/groups/alpha/analysis",

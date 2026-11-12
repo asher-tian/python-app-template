@@ -38,9 +38,11 @@ HTTP 是模板的必备能力。执行分析任务时不会自动启动服务；
 
 - **CLI** 负责参数解析、配置加载、Run 生命周期和 Group 并发；多 Group 按需使用 ThreadPoolExecutor。
 - **Core** 只包含业务规则和流程，不依赖 CLI、HTTP、Report、Store 或具体文件布局。
-- **Report** 按 Business 实现报告和数据输出，从 Run 记录聚合 Business → Group → Run 导航；latest successful Run 动态计算，不写共享索引。
+- **Report** 按 Business 实现报告和数据输出，从 Run 记录聚合 Business → Group → Run 导航；latest successful Run 动态计算，不写共享索引。业务报告通过 `report_kind` 选择明确的业务展示分支，不使用动态 Registry。
 - **Store** 只负责 workpath、相对路径安全解析、通用文件操作和 Run 记录，不创建固定业务目录。
-- **HTTP** 是必备的本地报告访问入口，默认只监听 127.0.0.1；提供报告导航、历史 Run、Dataset 访问和业务二次分析，不直接暴露整个 workpath。HTTP 服务按需启动，不需要随每次 CLI 分析任务自动运行。
+- **HTTP** 是必备的本地报告访问入口，默认只监听 127.0.0.1；提供报告导航、分页 Run 历史、Run 配置与环境详情、Dataset 分页访问和业务二次分析，不直接暴露整个 workpath。HTTP 服务按需启动，不需要随每次 CLI 分析任务自动运行。
+
+大表格 Dataset 使用 JSONL 按行存储，通过 HTTP 分页读取；每次请求默认返回 50 条，最大 200 条。小型统计结果继续使用 JSON。前端只请求当前页，不会下载完整 Dataset 后再截取。
 
 workpath 是应用工作目录。全局配置 app.cfg 的 workspace.run_records_dir 指定唯一通用 Run 记录目录，默认是 .app/runs。每次执行创建独立目录，保存 run.json，以及 logs/run.log、logs/run.jsonl 和各 Group 对应的日志文件。run.json 保存有效配置、配置来源、运行环境、Group 结果、开始结束时间和异常摘要；敏感配置字段会递归脱敏。
 

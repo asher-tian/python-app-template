@@ -45,6 +45,9 @@
 - 报告按 Business 特性实现；同一 Business 下 Group 是平级单元。
 - Business 配置声明的路径由对应业务的 Report builder 使用；不要把业务目录名写进通用 Workspace 或 Store。
 - Report 可以扫描和聚合 Run 记录，构建 Business -> Group -> Run 导航；不生成或维护 Business / Group Manifest。
+- GroupRunResult.report_kind 标识业务报告类型；公共 Shell 负责导航和通用 Run 信息，业务展示使用明确的业务分支，不建立动态 Registry。
+- 大型表格 Dataset 使用 JSONL；DatasetReference 保存 format 和 row_count。HTTP 只返回当前分页，不把完整 Dataset 发送给浏览器。
+- 小型统计和结构化结果使用 JSON。分页默认 50 条，最大 200 条。
 - 浏览器端只承担展示、筛选和轻量计算；复杂业务分析必须调用 Core。
 - 不为了统一外观强制所有业务使用相同页面结构。
 

@@ -8,7 +8,7 @@ from pathlib import PurePosixPath
 from {{ package_name }}.core.workflows.analysis import AnalysisResult
 from {{ package_name }}.core.workflows.comparison import ComparisonResult
 from {{ package_name }}.report.models import DatasetReference, GroupRunResult
-from {{ package_name }}.store.files import write_json, write_text
+from {{ package_name }}.store.files import write_json, write_jsonl, write_text
 from {{ package_name }}.store.workspace import Workspace
 
 
@@ -62,7 +62,7 @@ def build_analysis_report(
     result: AnalysisResult,
 ) -> GroupRunResult:
     records_path = _configured_path(
-        business_paths, "datasets", group_id, run_id, "records.json"
+        business_paths, "datasets", group_id, run_id, "records.jsonl"
     )
     summary_path = _configured_path(
         business_paths, "datasets", group_id, run_id, "summary.json"
@@ -76,7 +76,7 @@ def build_analysis_report(
         "threshold": result.threshold,
         "total": result.total,
     }
-    write_json(workspace.root, records_path, {"records": result.records})
+    write_jsonl(workspace.root, records_path, result.records)
     write_json(workspace.root, summary_path, summary)
     write_text(
         workspace.root,
@@ -94,8 +94,15 @@ def build_analysis_report(
         label=label,
         status="success",
         report_entry=report_path,
+        report_kind="analysis",
         datasets=[
-            DatasetReference(id="records", title="Analysis records", path=records_path),
+            DatasetReference(
+                id="records",
+                title="Analysis records",
+                path=records_path,
+                format="jsonl",
+                row_count=len(result.records),
+            ),
             DatasetReference(id="summary", title="Summary", path=summary_path),
         ],
         summary=summary,
@@ -114,7 +121,7 @@ def build_analysis_reanalysis_report(
     result: dict[str, int],
 ) -> GroupRunResult:
     records_path = _configured_path(
-        business_paths, "derived", group_id, run_id, "records.json"
+        business_paths, "derived", group_id, run_id, "records.jsonl"
     )
     result_path = _configured_path(
         business_paths, "derived", group_id, run_id, "reanalysis.json"
@@ -122,7 +129,7 @@ def build_analysis_reanalysis_report(
     report_path = _configured_path(
         business_paths, "reports", group_id, run_id, "index.html"
     )
-    write_json(workspace.root, records_path, {"records": records})
+    write_jsonl(workspace.root, records_path, records)
     write_json(workspace.root, result_path, result)
     write_text(
         workspace.root,
@@ -140,9 +147,20 @@ def build_analysis_reanalysis_report(
         label=label,
         status="success",
         report_entry=report_path,
+        report_kind="analysis",
         datasets=[
-            DatasetReference(id="records", title="Analysis records", path=records_path),
-            DatasetReference(id="reanalysis", title="Secondary analysis", path=result_path),
+            DatasetReference(
+                id="records",
+                title="Analysis records",
+                path=records_path,
+                format="jsonl",
+                row_count=len(records),
+            ),
+            DatasetReference(
+                id="reanalysis",
+                title="Secondary analysis",
+                path=result_path,
+            ),
         ],
         summary=result,
     )
@@ -159,7 +177,7 @@ def build_comparison_report(
     result: ComparisonResult,
 ) -> GroupRunResult:
     records_path = _configured_path(
-        business_paths, "exports", group_id, run_id, "comparison.json"
+        business_paths, "exports", group_id, run_id, "comparison.jsonl"
     )
     summary_path = _configured_path(
         business_paths, "exports", group_id, run_id, "summary.json"
@@ -173,7 +191,7 @@ def build_comparison_report(
         "left_total": result.left_total,
         "right_total": result.right_total,
     }
-    write_json(workspace.root, records_path, {"records": result.records})
+    write_jsonl(workspace.root, records_path, result.records)
     write_json(workspace.root, summary_path, summary)
     write_text(
         workspace.root,
@@ -191,8 +209,15 @@ def build_comparison_report(
         label=label,
         status="success",
         report_entry=report_path,
+        report_kind="comparison",
         datasets=[
-            DatasetReference(id="records", title="Comparison records", path=records_path),
+            DatasetReference(
+                id="records",
+                title="Comparison records",
+                path=records_path,
+                format="jsonl",
+                row_count=len(result.records),
+            ),
             DatasetReference(id="summary", title="Comparison summary", path=summary_path),
         ],
         summary=summary,

@@ -1,11 +1,13 @@
-"""Build report navigation by aggregating per-run records."""
+"""Build report navigation and paginated data access from per-run records."""
 
 from __future__ import annotations
 
+from math import ceil
 from pathlib import Path
+from typing import Any
 
-from {{ package_name }}.report.models import GroupRunResult
-from {{ package_name }}.store.files import read_json
+from {{ package_name }}.report.models import DatasetReference, GroupRunResult
+from {{ package_name }}.store.files import read_json, read_jsonl, read_jsonl_page
 from {{ package_name }}.store.run_record import RunRecord
 from {{ package_name }}.store.workspace import Workspace
 
@@ -20,7 +22,7 @@ class ReportCatalog:
             return []
 
         records: list[RunRecord] = []
-        for run_file in sorted(root.glob("*/run.json")):
+        for run_file in root.glob("*/run.json"):
             relative_path = run_file.relative_to(self.workspace.root).as_posix()
             record = RunRecord.model_validate(read_json(self.workspace.root, relative_path))
             if record.run_id != run_file.parent.name:
@@ -36,8 +38,8 @@ class ReportCatalog:
                 return group
         return None
 
-    def list_businesses(self) -> list[dict]:
-        businesses: dict[str, dict] = {}
+    def list_businesses(self) -> list[dict[str, Any]]:
+        businesses: dict[str, dict[str, Any]] = {}
         for record in self._records():
             if record.business_id is None:
                 continue
@@ -61,15 +63,23 @@ class ReportCatalog:
                         "group_id": group.group_id,
                         "label": group.label,
                         "latest_run_id": None,
+                        "latest_successful_at": None,
+                        "latest_attempt_run_id": None,
+                        "latest_attempt_at": None,
                         "latest_status": group.status,
+                        "latest_error": group.error,
                         "runs_count": 0,
                     },
                 )
                 entry["label"] = group.label
+                entry["latest_attempt_run_id"] = record.run_id
+                entry["latest_attempt_at"] = record.started_at
                 entry["latest_status"] = group.status
+                entry["latest_error"] = group.error or record.error
                 entry["runs_count"] += 1
                 if group.status == "success" and group.report_entry:
                     entry["latest_run_id"] = record.run_id
+                    entry["latest_successful_at"] = record.started_at
 
         result = []
         for business in businesses.values():
@@ -80,7 +90,7 @@ class ReportCatalog:
             result.append(business)
         return sorted(result, key=lambda item: (item["name"].casefold(), item["business_id"]))
 
-    def list_groups(self, business_id: str) -> list[dict]:
+    def list_groups(self, business_id: str) -> list[dict[str, Any]]:
         business = next(
             (item for item in self.list_businesses() if item["business_id"] == business_id),
             None,
@@ -118,12 +128,41 @@ class ReportCatalog:
                 return record, group
         raise FileNotFoundError(f"Run {run_id!r} was not found for {business_id}/{group_id}")
 
+    def run_detail(self, business_id: str, group_id: str, run_id: str) -> dict[str, Any]:
+        for record, group in self._matching_group_runs(business_id, group_id):
+            if record.run_id != run_id:
+                continue
+            return {
+                "run_id": record.run_id,
+                "command": record.command,
+                "run_status": record.status,
+                "group_status": group.status,
+                "started_at": record.started_at,
+                "finished_at": record.finished_at,
+                "report_kind": group.report_kind,
+                "summary": group.summary,
+                "error": group.error or record.error,
+                "configuration": record.configuration,
+                "environment": record.environment,
+                "datasets": [item.model_dump(mode="json") for item in group.datasets],
+                "has_report": bool(group.report_entry and group.status == "success"),
+            }
+        raise FileNotFoundError(f"Run {run_id!r} was not found for {business_id}/{group_id}")
+
     def group_context(
         self,
         business_id: str,
         group_id: str,
         run_id: str | None = None,
-    ) -> dict:
+        *,
+        history_page: int = 1,
+        history_page_size: int = 20,
+    ) -> dict[str, Any]:
+        if history_page < 1:
+            raise ValueError("history_page must be positive")
+        if not 1 <= history_page_size <= 100:
+            raise ValueError("history_page_size must be between 1 and 100")
+
         matches = self._matching_group_runs(business_id, group_id)
         if not matches:
             raise FileNotFoundError(f"Unknown Group {business_id}/{group_id}")
@@ -133,18 +172,29 @@ class ReportCatalog:
             if run_id
             else self.latest_group_run(business_id, group_id)
         )
-        _, latest_attempt_group = matches[-1]
+        latest_attempt_record, latest_attempt_group = matches[-1]
         latest_success_record, _ = self.latest_group_run(business_id, group_id)
-        history = [
+
+        all_history = [
             {
                 "run_id": record.run_id,
+                "command": record.command,
+                "run_status": record.status,
                 "status": group.status,
                 "started_at": record.started_at,
                 "finished_at": record.finished_at,
+                "report_kind": group.report_kind,
                 "summary": group.summary,
+                "error": group.error or record.error,
+                "has_report": bool(group.report_entry and group.status == "success"),
             }
             for record, group in reversed(matches)
         ]
+        total_runs = len(all_history)
+        total_pages = ceil(total_runs / history_page_size) if total_runs else 0
+        start = (history_page - 1) * history_page_size
+        history = all_history[start : start + history_page_size]
+
         return {
             "business": {
                 "business_id": selected_record.business_id,
@@ -156,27 +206,39 @@ class ReportCatalog:
                 "label": latest_attempt_group.label,
                 "latest_run_id": latest_success_record.run_id,
                 "latest_status": latest_attempt_group.status,
+                "latest_attempt_run_id": latest_attempt_record.run_id,
+                "latest_attempt_at": latest_attempt_record.started_at,
+                "latest_error": latest_attempt_group.error or latest_attempt_record.error,
+                "runs_count": total_runs,
+                "history_page": history_page,
+                "history_page_size": history_page_size,
+                "history_total_pages": total_pages,
                 "runs": history,
             },
             "latest_run": {
                 "run_id": selected_record.run_id,
+                "command": selected_record.command,
                 "started_at": selected_record.started_at,
                 "finished_at": selected_record.finished_at,
                 "status": selected_group.status,
+                "report_kind": selected_group.report_kind,
                 "summary": selected_group.summary,
+                "error": selected_group.error or selected_record.error,
+                "configuration": selected_record.configuration,
+                "environment": selected_record.environment,
                 "datasets": [
                     item.model_dump(mode="json") for item in selected_group.datasets
                 ],
             },
         }
 
-    def dataset(
+    def _dataset_reference(
         self,
         business_id: str,
         group_id: str,
         dataset_id: str,
-        run_id: str | None = None,
-    ):
+        run_id: str | None,
+    ) -> DatasetReference:
         _, group = (
             self.group_run(business_id, group_id, run_id)
             if run_id
@@ -185,9 +247,73 @@ class ReportCatalog:
         reference = next((item for item in group.datasets if item.id == dataset_id), None)
         if reference is None:
             raise FileNotFoundError(f"Dataset {dataset_id!r} was not declared by the Run")
+        return reference
+
+    def dataset(
+        self,
+        business_id: str,
+        group_id: str,
+        dataset_id: str,
+        run_id: str | None = None,
+    ):
+        reference = self._dataset_reference(business_id, group_id, dataset_id, run_id)
+        if reference.format == "jsonl":
+            return {"records": read_jsonl(self.workspace.root, reference.path)}
         if reference.format != "json":
             raise ValueError(f"Unsupported Dataset format: {reference.format}")
         return read_json(self.workspace.root, reference.path)
+
+    def dataset_page(
+        self,
+        business_id: str,
+        group_id: str,
+        dataset_id: str,
+        run_id: str | None = None,
+        *,
+        page: int = 1,
+        page_size: int = 50,
+    ) -> dict[str, Any]:
+        if page < 1:
+            raise ValueError("page must be positive")
+        if not 1 <= page_size <= 200:
+            raise ValueError("page_size must be between 1 and 200")
+
+        reference = self._dataset_reference(business_id, group_id, dataset_id, run_id)
+        if reference.format == "jsonl":
+            records, total = read_jsonl_page(
+                self.workspace.root,
+                reference.path,
+                page=page,
+                page_size=page_size,
+                row_count=reference.row_count,
+            )
+        elif reference.format == "json":
+            value = read_json(self.workspace.root, reference.path)
+            if isinstance(value, dict) and isinstance(value.get("records"), list):
+                all_records = value["records"]
+            elif isinstance(value, list):
+                all_records = value
+            else:
+                return {
+                    "dataset": reference.model_dump(mode="json"),
+                    "data": value,
+                }
+            total = len(all_records)
+            start = (page - 1) * page_size
+            records = all_records[start : start + page_size]
+        else:
+            raise ValueError(f"Unsupported Dataset format: {reference.format}")
+
+        columns = list(records[0]) if records else []
+        return {
+            "dataset": reference.model_dump(mode="json"),
+            "page": page,
+            "page_size": page_size,
+            "total_records": total,
+            "total_pages": ceil(total / page_size) if total else 0,
+            "columns": columns,
+            "records": records,
+        }
 
     def report_path(
         self,

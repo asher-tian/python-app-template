@@ -6,7 +6,7 @@ import json
 import uuid
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
@@ -15,8 +15,8 @@ from {{ package_name }}.core.workflows.analysis import reanalyze_records
 from {{ package_name }}.report.builders import build_analysis_reanalysis_report
 from {{ package_name }}.report.catalog import ReportCatalog
 from {{ package_name }}.report.models import GroupRunResult
-from {{ package_name }}.store.run_record import RunRecordStore
 from {{ package_name }}.store.logging import RunLogging
+from {{ package_name }}.store.run_record import RunRecordStore
 from {{ package_name }}.store.workspace import Workspace
 
 
@@ -68,9 +68,24 @@ def create_app(
         business_id: str,
         group_id: str,
         run_id: str | None = None,
+        history_page: int = Query(default=1, ge=1),
+        history_page_size: int = Query(default=20, ge=1, le=100),
     ) -> dict:
         try:
-            return catalog.group_context(business_id, group_id, run_id)
+            return catalog.group_context(
+                business_id,
+                group_id,
+                run_id,
+                history_page=history_page,
+                history_page_size=history_page_size,
+            )
+        except (FileNotFoundError, ValueError, json.JSONDecodeError) as exc:
+            raise not_found(exc) from exc
+
+    @app.get("/api/businesses/{business_id}/groups/{group_id}/runs/{run_id}")
+    def get_run_detail(business_id: str, group_id: str, run_id: str) -> dict:
+        try:
+            return catalog.run_detail(business_id, group_id, run_id)
         except (FileNotFoundError, ValueError, json.JSONDecodeError) as exc:
             raise not_found(exc) from exc
 
@@ -80,9 +95,18 @@ def create_app(
         group_id: str,
         dataset_id: str,
         run_id: str | None = None,
-    ):
+        page: int = Query(default=1, ge=1),
+        page_size: int = Query(default=50, ge=1, le=200),
+    ) -> dict:
         try:
-            return catalog.dataset(business_id, group_id, dataset_id, run_id)
+            return catalog.dataset_page(
+                business_id,
+                group_id,
+                dataset_id,
+                run_id,
+                page=page,
+                page_size=page_size,
+            )
         except (FileNotFoundError, ValueError, json.JSONDecodeError) as exc:
             raise not_found(exc) from exc
 
@@ -197,6 +221,7 @@ def create_app(
                 group_id=group_id,
                 label=source_group.label,
                 status="failed",
+                report_kind="analysis",
                 error=f"{type(exc).__name__}: {exc}",
             )
             run_record.finish(

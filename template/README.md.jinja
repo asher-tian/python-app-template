@@ -19,6 +19,16 @@
     uv run ruff format --check .
     uv run pytest
 
+## 报告能力
+
+HTTP 报告服务提供 Business → Group → Run 导航：
+
+- Business 下的 Group 是平级单元；每个 Group 展示最近一次执行状态和成功报告入口。
+- Group 页面展示统计摘要、Run 历史、脱敏后的有效配置和执行环境。
+- Run 历史支持分页；失败 Run 仍可查看错误和执行元数据。
+- 大型表格 Dataset 使用 JSONL 按行存储，通过 API 分页读取。默认每页 50 条，最大 200 条；小型统计结果使用 JSON。
+- Analysis 和 Comparison 使用各自的业务展示分支。新增 Business 可以拥有自己的报告页面和 Dataset，不要求复用相同的内容布局。
+
 ## 模板结构与架构
 
     src/{{ package_name }}/

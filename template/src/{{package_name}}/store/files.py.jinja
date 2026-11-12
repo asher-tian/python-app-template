@@ -49,6 +49,77 @@ def write_json(root: Path, relative_path: str, value: Any) -> str:
     return PurePosixPath(relative_path).as_posix()
 
 
+def write_jsonl(root: Path, relative_path: str, records: list[dict[str, Any]]) -> str:
+    """Write records as newline-delimited JSON using an atomic replacement."""
+    path = resolve_relative(root, relative_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        with temporary.open("w", encoding="utf-8", newline="\n") as stream:
+            for record in records:
+                stream.write(
+                    json.dumps(record, ensure_ascii=False, separators=(",", ":"), default=str)
+                )
+                stream.write("\n")
+        temporary.replace(path)
+    finally:
+        temporary.unlink(missing_ok=True)
+    return PurePosixPath(relative_path).as_posix()
+
+
+def read_jsonl(root: Path, relative_path: str) -> list[dict[str, Any]]:
+    path = resolve_relative(root, relative_path)
+    records: list[dict[str, Any]] = []
+    with path.open("r", encoding="utf-8") as stream:
+        for line_number, line in enumerate(stream, start=1):
+            if not line.strip():
+                continue
+            value = json.loads(line)
+            if not isinstance(value, dict):
+                raise ValueError(f"JSONL record at line {line_number} must be an object")
+            records.append(value)
+    return records
+
+
+def read_jsonl_page(
+    root: Path,
+    relative_path: str,
+    *,
+    page: int,
+    page_size: int,
+    row_count: int | None = None,
+) -> tuple[list[dict[str, Any]], int]:
+    """Read one JSONL page without loading the complete Dataset into memory."""
+    if page < 1 or page_size < 1:
+        raise ValueError("Page and page size must be positive")
+    path = resolve_relative(root, relative_path)
+    if not path.is_file():
+        raise FileNotFoundError(f"Dataset file does not exist: {relative_path}")
+
+    if row_count is None:
+        with path.open("r", encoding="utf-8") as stream:
+            total = sum(1 for line in stream if line.strip())
+    else:
+        total = row_count
+
+    start = (page - 1) * page_size
+    stop = start + page_size
+    records: list[dict[str, Any]] = []
+    with path.open("r", encoding="utf-8") as stream:
+        for line_number, line in enumerate(stream):
+            if line_number < start:
+                continue
+            if line_number >= stop:
+                break
+            if not line.strip():
+                continue
+            value = json.loads(line)
+            if not isinstance(value, dict):
+                raise ValueError(f"JSONL record at line {line_number + 1} must be an object")
+            records.append(value)
+    return records, total
+
+
 def write_text(root: Path, relative_path: str, content: str) -> str:
     path = resolve_relative(root, relative_path)
     path.parent.mkdir(parents=True, exist_ok=True)

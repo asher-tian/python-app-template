@@ -11,7 +11,8 @@ class DatasetReference(BaseModel):
     id: str
     title: str
     path: str
-    format: str = "json"
+    format: Literal["json", "jsonl"] = "json"
+    row_count: int | None = None
 
 
 class GroupRunResult(BaseModel):
@@ -21,6 +22,7 @@ class GroupRunResult(BaseModel):
     label: str
     status: Literal["success", "failed"]
     report_entry: str | None = None
+    report_kind: str | None = None
     datasets: list[DatasetReference] = Field(default_factory=list)
     summary: dict[str, object] = Field(default_factory=dict)
     error: str | None = None
