@@ -33,7 +33,7 @@ jobs:
           --data "python_version=${{ matrix.python-version }}"
           . ./template-validation
 
-      - name: Verify project name follows destination directory
+      - name: Verify generated project defaults
         working-directory: template-validation
         run: |
           python - <<'PY'
@@ -43,6 +43,7 @@ jobs:
               "# template-validation\n"
           )
           pyproject = Path("pyproject.toml").read_text(encoding="utf-8")
+          assert 'version = "0.1.0"' in pyproject
           assert 'name = "template-validation"' in pyproject
           assert 'description = "template-validation"' in pyproject
           assert "template_validation =" in pyproject
