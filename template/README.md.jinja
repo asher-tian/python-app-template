@@ -7,9 +7,11 @@
 需要 Python {{ python_version }} 和 uv。
 
     uv sync --all-groups
-    uv run {{ package_name }} analysis --config analysis.cfg
-    uv run {{ package_name }} comparison --config comparison.cfg
-    uv run {{ package_name }} http --config app.cfg
+    uv run {{ package_name }} analysis --config examples/analysis.cfg
+    uv run {{ package_name }} comparison --config examples/comparison.cfg
+    uv run {{ package_name }} http --config examples/app.cfg
+
+配置案例统一放在 `examples/` 目录中，可按项目需要复制和修改。
 
 执行分析任务不会自动启动 HTTP 服务。需要查看报告时，运行 http 命令并访问 http://127.0.0.1:8000。HTTP 服务默认只监听本机地址。
 
@@ -53,6 +55,6 @@ HTTP 报告服务提供 Business → Group → Run 导航：
 - **Store** 只负责 workpath、相对路径安全解析、通用文件操作和 Run 记录，不创建固定业务目录。
 - **HTTP** 是必备的本地报告访问入口，默认只监听 127.0.0.1；通过 Report 访问成功 Run 声明的页面和 Dataset，不直接暴露整个 workpath。HTTP 服务按需启动，不会随分析命令自动运行。
 
-workpath 是应用工作目录。app.cfg 的 workspace.run_records_dir 指定唯一通用 Run 记录目录，默认是 .app/runs。每次执行创建独立目录，保存 run.json，以及 logs/run.log、logs/run.jsonl 和各 Group 对应的日志文件。run.json 保存有效配置、配置来源、运行环境、Group 结果、开始结束时间和异常摘要；敏感配置字段会递归脱敏。
+workpath 是应用工作目录。examples/app.cfg 的 workspace.run_records_dir 指定唯一通用 Run 记录目录，默认是 .app/runs。每次执行创建独立目录，保存 run.json，以及 logs/run.log、logs/run.jsonl 和各 Group 对应的日志文件。run.json 保存有效配置、配置来源、运行环境、Group 结果、开始结束时间和异常摘要；敏感配置字段会递归脱敏。
 
 每个 Business 在自己的 TOML 配置中通过 paths 声明数据、报告和中间产物目录。业务内部目录结构由 Business 自行决定；不同 Business 可以使用相同 Group ID 或 Label。模板不建立 workspace.json、business.json、Group Manifest、Runtime、应用启动引导器（Bootstrapper）、通用 DAG、Task Registry 或分布式 Worker。

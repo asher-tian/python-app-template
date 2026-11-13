@@ -152,7 +152,7 @@ def test_failed_only_group_remains_browsable(tmp_path):
         command="analysis",
         business_id="analysis",
         business_name="Analysis",
-        config_source="analysis.cfg",
+        config_source="examples/analysis.cfg",
         effective_config={"business": {"paths": {}}},
     )
     failed = GroupRunResult(

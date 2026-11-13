@@ -21,7 +21,7 @@ def test_report_web_browser_smoke():
     assert executable is not None
 
     server = subprocess.Popen(
-        [executable, "http", "--config", "app.cfg"],
+        [executable, "http", "--config", "examples/app.cfg"],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.STDOUT,
     )

@@ -9,7 +9,7 @@ def _add_business_arguments(command: argparse.ArgumentParser) -> None:
     command.add_argument(
         "--app-config",
         type=Path,
-        default=Path("app.cfg"),
+        default=Path("examples/app.cfg"),
         help="Global application TOML config",
     )
     command.add_argument("--workpath", type=Path, help="Override configured workpath")
@@ -32,7 +32,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--config",
         dest="config",
         type=Path,
-        default=Path("app.cfg"),
+        default=Path("examples/app.cfg"),
         help="Global application TOML config",
     )
     http.add_argument("--workpath", type=Path, help="Override configured workpath")

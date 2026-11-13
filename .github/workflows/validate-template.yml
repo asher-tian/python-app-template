@@ -48,6 +48,12 @@ jobs:
           assert 'description = "template-validation"' in pyproject
           assert "template_validation =" in pyproject
           assert Path("src/template_validation").is_dir()
+          assert Path("examples/app.cfg").is_file()
+          assert Path("examples/analysis.cfg").is_file()
+          assert Path("examples/comparison.cfg").is_file()
+          assert not Path("app.cfg").exists()
+          assert not Path("analysis.cfg").exists()
+          assert not Path("comparison.cfg").exists()
           PY
 
       - uses: astral-sh/setup-uv@v6
@@ -69,8 +75,8 @@ jobs:
       - name: Run Business commands
         working-directory: template-validation
         run: |
-          uv run template_validation analysis --config analysis.cfg
-          uv run template_validation comparison --config comparison.cfg
+          uv run template_validation analysis --config examples/analysis.cfg
+          uv run template_validation comparison --config examples/comparison.cfg
 
       - name: Verify Run records and Business paths
         working-directory: template-validation

@@ -27,3 +27,12 @@ def test_http_accepts_cfg_alias():
 def test_comparison_command_is_available():
     args = build_parser().parse_args(["comparison", "--config", "comparison.cfg"])
     assert args.command == "comparison"
+
+
+def test_default_config_paths_use_examples_directory():
+    parser = build_parser()
+    business_args = parser.parse_args(["analysis", "--config", "examples/analysis.cfg"])
+    http_args = parser.parse_args(["http"])
+
+    assert str(business_args.app_config) == "examples/app.cfg"
+    assert str(http_args.config) == "examples/app.cfg"

@@ -13,12 +13,14 @@ cd ./my-project
 uv sync
 
 # 执行分析
-uv run my_project analysis --config analysis.cfg
-uv run my_project comparison --config comparison.cfg
+uv run my_project analysis --config examples/analysis.cfg
+uv run my_project comparison --config examples/comparison.cfg
 
 # 查看报告
-uv run my_project http --config app.cfg
+uv run my_project http --config examples/app.cfg
 ```
+
+配置案例统一放在生成项目的 `examples/` 目录中，包含 `analysis.cfg`、`comparison.cfg` 和 `app.cfg`。
 
 `project_name` 默认取目标目录名。例如目标目录为 `./my-project` 时，默认生成 `project_name=my-project`、`project_slug=my-project` 和 `package_name=my_project`。这些值都可以在 Copier 提示中修改。
 

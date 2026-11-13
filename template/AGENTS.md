@@ -23,7 +23,7 @@
 - Workspace 只负责根路径、相对路径解析和路径安全；初始化时只确保 workpath 根目录存在。
 - 禁止 workspace.json、business.json、Group Manifest 或任何跨 Run 的业务元数据文件。
 - 不创建固定的 shared/、businesses/、data/、reports/、cache/ 等业务目录。
-- 唯一通用持久化约定是 Run 记录目录；其相对路径由 app.cfg 的 workspace.run_records_dir 配置，默认值为 .app/runs。
+- 唯一通用持久化约定是 Run 记录目录；其相对路径由 examples/app.cfg 的 workspace.run_records_dir 配置，默认值为 .app/runs。
 - Business 自己在业务配置中声明所需路径；业务内部目录结构完全由业务决定。通用 Store 不解释这些路径的业务含义。
 - 所有相对路径必须是 POSIX 相对路径，禁止绝对路径、路径穿越、反斜杠和通过符号链接逃逸 workpath。
 - Business ID、Group ID 用于业务标识；Label 仅用于展示。不同 Business 可以有相同 Group ID 或 Label。
@@ -85,7 +85,8 @@
 
 ## 配置与工具链
 
-- 全局 app.cfg 管理 workpath、Run 记录路径和 HTTP；各业务配置管理业务参数、Groups 和业务专属路径。
+- 全局 examples/app.cfg 管理 workpath、Run 记录路径和 HTTP；各业务配置管理业务参数、Groups 和业务专属路径。
+- 可供用户参考的配置案例统一放在 examples/，不要散落在项目根目录；修改默认配置时同步更新对应文档、CLI 默认路径和 CI。
 - 配置文件使用 TOML；外部输入由 CLI / HTTP 边界校验后映射到 Core 输入。
 - 使用 uv 管理环境；保持 src 布局。
 - 仅在确有必要时增加依赖，并说明原因。
