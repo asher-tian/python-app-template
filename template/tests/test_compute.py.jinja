@@ -1,0 +1,35 @@
+import os
+from concurrent.futures import ThreadPoolExecutor
+
+from {{ package_name }}.cli.compute import SharedCompute
+
+
+def _double_with_process_id(value: int) -> tuple[int, int]:
+    return value * 2, os.getpid()
+
+
+def test_groups_can_submit_to_one_shared_process_pool_concurrently():
+    with SharedCompute() as compute:
+        with ThreadPoolExecutor(max_workers=3) as groups:
+            futures = [
+                groups.submit(compute.map, _double_with_process_id, values)
+                for values in ([1, 2], [3, 4], [5, 6])
+            ]
+            results = [future.result() for future in futures]
+
+        assert 1 <= compute.worker_count <= 4
+
+    flattened = [item for group in results for item in group]
+    assert [value for value, _ in flattened] == [2, 4, 6, 8, 10, 12]
+    assert all(process_id != os.getpid() for _, process_id in flattened)
+
+
+def test_shared_compute_rejects_use_after_close():
+    compute = SharedCompute()
+    compute.close()
+    try:
+        compute.map(_double_with_process_id, [1])
+    except RuntimeError as exc:
+        assert "closed" in str(exc)
+    else:
+        raise AssertionError("Expected a closed compute pool to reject work")

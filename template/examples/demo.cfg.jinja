@@ -1,0 +1,24 @@
+[business]
+id = "demo"
+name = "Demo"
+description = "End-to-end example of parallel Groups and shared compute"
+
+[paths]
+datasets = "demo/datasets"
+reports = "demo/reports"
+derived = "demo/derived"
+
+[[groups]]
+label = "alpha"
+item_count = 1200
+threshold = 600
+
+[[groups]]
+label = "beta"
+item_count = 900
+threshold = 450
+
+[[groups]]
+label = "gamma"
+item_count = 1500
+threshold = 750

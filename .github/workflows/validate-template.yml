@@ -49,12 +49,13 @@ jobs:
           assert "template_validation =" in pyproject
           assert Path("src/template_validation").is_dir()
           assert Path("examples/app.cfg").is_file()
-          assert Path("examples/analysis.cfg").is_file()
-          assert Path("examples/comparison.cfg").is_file()
+          assert Path("examples/demo.cfg").is_file()
           assert 'workpath = "../workspace"' in Path("examples/app.cfg").read_text(encoding="utf-8")
           assert not Path("app.cfg").exists()
           assert not Path("analysis.cfg").exists()
           assert not Path("comparison.cfg").exists()
+          assert not Path("examples/analysis.cfg").exists()
+          assert not Path("examples/comparison.cfg").exists()
           PY
 
       - uses: astral-sh/setup-uv@v6
@@ -73,11 +74,10 @@ jobs:
         working-directory: template-validation
         run: uv run pytest
 
-      - name: Run Business commands
+      - name: Run demo command
         working-directory: template-validation
         run: |
-          uv run template_validation analysis --config examples/analysis.cfg
-          uv run template_validation comparison --config examples/comparison.cfg
+          uv run template_validation demo --config examples/demo.cfg
 
       - name: Verify Run records and Business paths
         working-directory: template-validation
@@ -88,15 +88,26 @@ jobs:
 
           root = Path("workspace")
           run_files = list((root / ".app" / "runs").glob("*/run.json"))
-          assert len(run_files) == 2
+          assert len(run_files) == 1
           records = [json.loads(path.read_text()) for path in run_files]
-          assert {record["business_id"] for record in records} == {"analysis", "comparison"}
+          assert {record["business_id"] for record in records} == {"demo"}
           assert all(record["status"] == "success" for record in records)
           assert not (root / "workspace.json").exists()
           assert not (root / "businesses").exists()
           assert not (root / "shared").exists()
-          assert (root / "analysis" / "reports").is_dir()
-          assert (root / "comparison" / "reports").is_dir()
+          record = records[0]
+          assert record["command"] == "demo"
+          assert len(record["groups"]) == 3
+          assert all(group["status"] == "success" for group in record["groups"])
+          assert all(group["summary"]["compute_chunks"] > 0 for group in record["groups"])
+          run_dir = run_files[0].parent
+          assert (run_dir / "logs" / "run.log").is_file()
+          assert (run_dir / "logs" / "run.jsonl").is_file()
+          assert "shared process pool" in (
+              run_dir / "logs" / "groups" / "demo_alpha.log"
+          ).read_text(encoding="utf-8")
+          assert (root / "demo" / "reports").is_dir()
+          assert (root / "demo" / "datasets").is_dir()
           PY
 
       - name: Install Chromium for browser smoke test

@@ -2,8 +2,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from {{ package_name }}.cli.commands.http import _require_loopback
-from {{ package_name }}.cli.commands.analysis import execute as execute_analysis
-from {{ package_name }}.cli.commands.comparison import execute as execute_comparison
+from {{ package_name }}.cli.main import main
 from {{ package_name }}.http.app import create_app
 from {{ package_name }}.report.models import GroupRunResult
 from {{ package_name }}.store.run_record import RunRecordStore
@@ -18,30 +17,28 @@ def _write_configs(tmp_path):
         '[http]\nhost = "127.0.0.1"\nport = 8000\nauto_open = false\n',
         encoding="utf-8",
     )
-    analysis_config = tmp_path / "analysis.cfg"
-    analysis_config.write_text(
-        '[business]\nid = "analysis"\nname = "Analysis"\n'
-        '[paths]\ndatasets = "analysis-files/datasets"\n'
-        'reports = "analysis-files/reports"\n'
-        'derived = "analysis-files/derived"\n'
-        '[[groups]]\nlabel = "alpha"\nitem_count = 5\nthreshold = 2\n',
+    demo_config = tmp_path / "demo.cfg"
+    demo_config.write_text(
+        '[business]\nid = "demo"\nname = "Demo"\n'
+        '[paths]\ndatasets = "demo-files/datasets"\n'
+        'reports = "demo-files/reports"\n'
+        'derived = "demo-files/derived"\n'
+        '[[groups]]\nlabel = "alpha"\nitem_count = 5\nthreshold = 2\n'
+        '[[groups]]\nlabel = "beta"\nitem_count = 3\nthreshold = 1\n',
         encoding="utf-8",
     )
-    comparison_config = tmp_path / "comparison.cfg"
-    comparison_config.write_text(
-        '[business]\nid = "comparison"\nname = "Comparison"\n'
-        '[paths]\nexports = "comparison-files/exports"\n'
-        'reports = "comparison-files/reports"\n'
-        '[[groups]]\nlabel = "alpha"\nitem_count = 3\nthreshold = 0\n',
-        encoding="utf-8",
-    )
-    return app_config, analysis_config, comparison_config
+    return app_config, demo_config
 
 
-def test_http_discovers_from_run_records_and_persists_secondary_analysis(tmp_path):
-    app_config, analysis_config, comparison_config = _write_configs(tmp_path)
-    assert execute_analysis(analysis_config, app_config) == 0
-    assert execute_comparison(comparison_config, app_config) == 0
+def test_http_discovers_demo_and_persists_secondary_analysis(tmp_path):
+    app_config, demo_config = _write_configs(tmp_path)
+    assert main([
+        "demo",
+        "--config",
+        str(demo_config),
+        "--app-config",
+        str(app_config),
+    ]) == 0
 
     client = TestClient(
         create_app(
@@ -50,36 +47,36 @@ def test_http_discovers_from_run_records_and_persists_secondary_analysis(tmp_pat
         )
     )
     businesses = client.get("/api/businesses").json()
-    assert [item["business_id"] for item in businesses] == ["analysis", "comparison"]
+    assert [item["business_id"] for item in businesses] == ["demo"]
 
-    analysis_group = client.get("/api/businesses/analysis/groups/alpha").json()
-    comparison_group = client.get("/api/businesses/comparison/groups/alpha").json()
-    assert analysis_group["group"]["label"] == comparison_group["group"]["label"] == "alpha"
-    assert analysis_group["latest_run"]["report_kind"] == "analysis"
-    assert comparison_group["latest_run"]["report_kind"] == "comparison"
+    group = client.get("/api/businesses/demo/groups/alpha").json()
+    assert group["group"]["label"] == "alpha"
+    assert group["latest_run"]["report_kind"] == "demo"
 
-    page = client.get("/businesses/analysis/groups/alpha")
+    page = client.get("/businesses/demo/groups/alpha")
     assert page.status_code == 200
-    assert 'data-business-id="analysis"' in page.text
+    assert 'data-business-id="demo"' in page.text
+    assert 'data-report-kind="demo"' in page.text
     assert "/assets/vendor/bootstrap/bootstrap.min.css" in page.text
     assert "/assets/css/app.css" in page.text
     assert "/assets/js/app.js" in page.text
 
     dataset = client.get(
-        "/api/businesses/analysis/groups/alpha/datasets/records?page=1&page_size=2"
+        "/api/businesses/demo/groups/alpha/datasets/records?page=1&page_size=2"
     ).json()
     assert len(dataset["records"]) == 2
     assert dataset["total_records"] == 5
     assert dataset["total_pages"] == 3
 
     response = client.post(
-        "/api/businesses/analysis/groups/alpha/analysis",
+        "/api/businesses/demo/groups/alpha/reanalysis",
         json={"threshold": 4},
     )
     assert response.status_code == 200
     assert response.json()["summary"]["selected_count"] == 2
     assert response.json()["run_id"]
-    assert response.json()["source_run_id"] == analysis_group["latest_run"]["run_id"]
+    assert response.json()["source_run_id"] == group["latest_run"]["run_id"]
+
     http_run_dir = (
         tmp_path
         / "workspace"
@@ -88,50 +85,37 @@ def test_http_discovers_from_run_records_and_persists_secondary_analysis(tmp_pat
         / response.json()["run_id"]
     )
     assert (http_run_dir / "logs" / "run.log").is_file()
-    assert (
-        http_run_dir / "logs" / "groups" / "analysis_alpha.jsonl"
-    ).is_file()
+    assert (http_run_dir / "logs" / "groups" / "demo_alpha.jsonl").is_file()
 
-    updated = client.get("/api/businesses/analysis/groups/alpha").json()
+    updated = client.get("/api/businesses/demo/groups/alpha").json()
     assert updated["latest_run"]["run_id"] == response.json()["run_id"]
-    assert len(updated["group"]["runs"]) == 2
     assert updated["group"]["runs_count"] == 2
     run_detail = client.get(
-        "/api/businesses/analysis/groups/alpha/runs/" + response.json()["run_id"]
+        "/api/businesses/demo/groups/alpha/runs/" + response.json()["run_id"]
     ).json()
-    assert run_detail["report_kind"] == "analysis"
+    assert run_detail["command"] == "http.reanalysis"
+    assert run_detail["report_kind"] == "demo"
     assert run_detail["configuration"]["effective_config"]["source_run_id"] == (
-        analysis_group["latest_run"]["run_id"]
+        group["latest_run"]["run_id"]
     )
 
     unsupported = client.post(
-        "/api/businesses/comparison/groups/alpha/analysis",
+        "/api/businesses/other/groups/alpha/reanalysis",
         json={"threshold": 1},
     )
     assert unsupported.status_code == 409
 
+    private_file = client.get("/demo-files/datasets/alpha/private.json")
+    assert private_file.status_code == 404
+    traversal = client.get("/businesses/demo/groups/alpha/../../../../etc/passwd")
+    assert traversal.status_code in (404, 405)
+
     run_files = list(
         (tmp_path / "workspace" / "run-data" / "history").glob("*/run.json")
     )
-    assert len(run_files) == 3
+    assert len(run_files) == 2
     assert not (tmp_path / "workspace" / "business.json").exists()
     assert not (tmp_path / "workspace" / "businesses").exists()
-
-
-def test_http_does_not_expose_undeclared_workspace_files(tmp_path):
-    app_config, analysis_config, _ = _write_configs(tmp_path)
-    execute_analysis(analysis_config, app_config)
-    client = TestClient(
-        create_app(
-            tmp_path / "workspace",
-            run_records_dir="run-data/history",
-        )
-    )
-
-    response = client.get("/analysis-files/datasets/alpha/private.json")
-    assert response.status_code == 404
-    traversal = client.get("/businesses/analysis/groups/alpha/../../../../etc/passwd")
-    assert traversal.status_code in (404, 405)
 
 
 def test_http_host_is_loopback_only_and_ipv6_url_is_bracketed():
@@ -149,34 +133,32 @@ def test_failed_only_group_remains_browsable(tmp_path):
     run = RunRecordStore(
         workspace,
         run_id="failed-run",
-        command="analysis",
-        business_id="analysis",
-        business_name="Analysis",
-        config_source="examples/analysis.cfg",
+        command="demo",
+        business_id="demo",
+        business_name="Demo",
+        config_source="examples/demo.cfg",
         effective_config={"business": {"paths": {}}},
     )
     failed = GroupRunResult(
         group_id="alpha",
         label="Alpha",
         status="failed",
-        report_kind="analysis",
+        report_kind="demo",
         error="intentional test failure",
     )
     run.finish([failed.model_dump(mode="json")], "failed", error="intentional test failure")
 
     client = TestClient(create_app(tmp_path / "workspace"))
-    response = client.get("/businesses/analysis/groups/alpha")
+    response = client.get("/businesses/demo/groups/alpha")
     assert response.status_code == 200
-    assert 'data-business-id="analysis"' in response.text
+    assert 'data-business-id="demo"' in response.text
 
-    context = client.get("/api/businesses/analysis/groups/alpha").json()
+    context = client.get("/api/businesses/demo/groups/alpha").json()
     assert context["group"]["latest_run_id"] is None
     assert context["latest_run"]["run_id"] == "failed-run"
     assert context["latest_run"]["status"] == "failed"
     assert context["latest_run"]["error"] == "intentional test failure"
 
-    historical = client.get(
-        "/businesses/analysis/groups/alpha/runs/failed-run"
-    )
+    historical = client.get("/businesses/demo/groups/alpha/runs/failed-run")
     assert historical.status_code == 200
     assert 'data-run-id="failed-run"' in historical.text

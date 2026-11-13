@@ -9,7 +9,8 @@
 
 ## 模块边界
 
-- CLI 负责参数、配置、命令编排、运行生命周期和退出码。
+- CLI 负责命令解析、配置加载、命令编排、Run 生命周期、并发和退出码。
+- 命令 Handler 放在 cli/commands/<name>.py；commands/__init__.py 使用显式字典映射命令名与 Handler，main.py 只负责解析参数、查表分发和统一异常处理，不维护 if/elif 命令分支。新增命令时增加 Handler、Parser 定义并更新映射。
 - Core 负责业务模型、业务规则和分析流程；不得依赖 CLI、Pydantic 配置模型、HTTP、Report、Store 或具体路径。
 - Report 负责业务专属报告生成、报告数据契约和前端交互；不得复制 Core 业务算法。
 - Store 负责 Workspace 路径访问、Run 记录和通用文件操作；不解释业务目录内部含义。
@@ -45,7 +46,7 @@
 - 报告按 Business 特性实现；同一 Business 下 Group 是平级单元。
 - Business 配置声明的路径由对应业务的 Report builder 使用；不要把业务目录名写进通用 Workspace 或 Store。
 - Report 可以扫描和聚合 Run 记录，构建 Business -> Group -> Run 导航；不生成或维护 Business / Group Manifest。
-- GroupRunResult.report_kind 标识业务报告类型；公共 Shell 负责导航和通用 Run 信息，业务展示使用明确的业务分支，不建立动态 Registry。
+- GroupRunResult.report_kind 标识业务报告类型；公共 Shell 负责导航和通用 Run 信息，前端通过显式静态映射表加载业务视图，不建立动态 Registry。
 - 每个 Business 的前端展示放在 report/frontend/js/businesses/<report_kind>.js；页面编排位于 js/pages，跨业务 UI 能力位于 js/shared。
 - 大型表格 Dataset 使用 JSONL；DatasetReference 保存 format 和 row_count。HTTP 只返回当前分页，不把完整 Dataset 发送给浏览器。
 - 小型统计和结构化结果使用 JSON。分页默认 50 条，最大 200 条。
@@ -78,14 +79,16 @@
 
 ## 并发、日志与运行记录
 
-- 多 Group 并发按需使用 ThreadPoolExecutor；不暴露 CPU、MEM 或 Worker 数量配置。
-- 不默认创建 ProcessPoolExecutor。确有 CPU 密集需求时，在具体应用中引入共享进程池。
+- 多 Group 并发使用一个 ThreadPoolExecutor。
+- Demo 使用一个 SharedCompute（ProcessPoolExecutor）供所有 Group 共享；由 demo Handler 创建并关闭，Group 不得各自创建进程池，也不得嵌套创建进程池。
+- SharedCompute 只接收可 pickle 的纯函数和数据，不承载日志 Handler、Workspace、数据库连接或其他运行上下文。
+- CPU、MEM 和 Worker 数量不暴露为通用配置；SharedCompute 内部采用有界默认值。其他业务没有 CPU 密集需求时不必创建进程池。
 - Run 日志与 run.json 位于同一个 Run 目录；run.log / groups/*.log 保留 DEBUG 文本、源码文件和行号及完整异常堆栈，run.jsonl / groups/*.jsonl 保存结构化事件；Console 仅显示 INFO 及异常摘要，不输出堆栈。
 - 不同 Run 之间无共享写入；同一个 Run 内由主线程汇总 Group 结果并原子更新 run.json。
 
 ## 配置与工具链
 
-- 全局 examples/app.cfg 管理 workpath、Run 记录路径和 HTTP；各业务配置管理业务参数、Groups 和业务专属路径。
+- 全局 examples/app.cfg 管理 workpath、Run 记录路径和 HTTP；examples/demo.cfg 管理 Demo 参数、Groups 和业务专属路径。
 - 可供用户参考的配置案例统一放在 examples/，不要散落在项目根目录；修改默认配置时同步更新对应文档、CLI 默认路径和 CI。
 - 配置文件使用 TOML；外部输入由 CLI / HTTP 边界校验后映射到 Core 输入。
 - 使用 uv 管理环境；保持 src 布局。

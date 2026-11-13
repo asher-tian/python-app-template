@@ -1,0 +1,9 @@
+"""Explicit CLI command-to-handler mapping."""
+
+from {{ package_name }}.cli.commands.demo import execute as execute_demo
+from {{ package_name }}.cli.commands.http import execute as execute_http
+
+COMMAND_HANDLERS = {
+    "demo": execute_demo,
+    "http": execute_http,
+}

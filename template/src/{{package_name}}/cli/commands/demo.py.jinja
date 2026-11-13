@@ -1,0 +1,52 @@
+"""Run the end-to-end demo using parallel Groups and shared compute."""
+
+from __future__ import annotations
+
+import argparse
+import logging
+
+from {{ package_name }}.cli.commands.common import execute_groups
+from {{ package_name }}.cli.compute import SharedCompute
+from {{ package_name }}.cli.config import GroupConfig
+from {{ package_name }}.core.workflows.demo import (
+    DemoInput,
+    aggregate_demo,
+    build_demo_chunks,
+    calculate_demo_chunk,
+)
+from {{ package_name }}.report.builders import build_demo_report
+
+
+def execute(args: argparse.Namespace) -> int:
+    with SharedCompute() as compute:
+
+        def workflow(
+            group: GroupConfig,
+            group_id: str,
+            logger: logging.Logger,
+        ):
+            request = DemoInput(
+                group_id=group_id,
+                label=group.label,
+                item_count=group.item_count,
+                threshold=group.threshold,
+            )
+            chunks = build_demo_chunks(request)
+            logger.info(
+                "Submitting %d tasks to shared process pool; workers=%d",
+                len(chunks),
+                compute.worker_count,
+            )
+            partial_results = compute.map(calculate_demo_chunk, chunks)
+            result = aggregate_demo(request, partial_results)
+            logger.info("Shared compute completed; tasks=%d", result.compute_chunks)
+            return result
+
+        return execute_groups(
+            command="demo",
+            config_path=args.config,
+            app_config_path=args.app_config,
+            workpath_override=args.workpath,
+            workflow=workflow,
+            report_builder=build_demo_report,
+        )

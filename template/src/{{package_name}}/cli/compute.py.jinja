@@ -1,0 +1,44 @@
+"""One process pool shared by every Group in a single Run."""
+
+from __future__ import annotations
+
+import multiprocessing
+import os
+from collections.abc import Callable, Iterable
+from concurrent.futures import ProcessPoolExecutor
+from typing import TypeVar
+
+_Input = TypeVar("_Input")
+_Output = TypeVar("_Output")
+
+
+class SharedCompute:
+    """Thread-safe facade over one bounded, spawn-based process pool."""
+
+    def __init__(self) -> None:
+        self.worker_count = min(4, os.cpu_count() or 1)
+        self._executor = ProcessPoolExecutor(
+            max_workers=self.worker_count,
+            mp_context=multiprocessing.get_context("spawn"),
+        )
+        self._closed = False
+
+    def map(
+        self,
+        function: Callable[[_Input], _Output],
+        items: Iterable[_Input],
+    ) -> list[_Output]:
+        if self._closed:
+            raise RuntimeError("Shared compute pool is closed")
+        return list(self._executor.map(function, items))
+
+    def close(self) -> None:
+        if not self._closed:
+            self._executor.shutdown(wait=True, cancel_futures=True)
+            self._closed = True
+
+    def __enter__(self) -> SharedCompute:
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback) -> None:
+        self.close()

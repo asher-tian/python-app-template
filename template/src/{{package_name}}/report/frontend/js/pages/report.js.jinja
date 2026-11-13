@@ -189,6 +189,10 @@ function navigateHistory(page) {
   window.location.assign(url);
 }
 
+const REPORT_VIEWS = {
+  demo: () => import("../businesses/demo.js")
+};
+
 async function renderBusinessReport(root, run, businessId, groupId, baseUrl) {
   const renderDatasetForRun = (reference) => renderDataset({
     reference,
@@ -197,19 +201,9 @@ async function renderBusinessReport(root, run, businessId, groupId, baseUrl) {
     initialPage: getQueryNumber("dataset_" + reference.id + "_page", 1)
   });
 
-  if (run.report_kind === "analysis") {
-    const view = await import("../businesses/analysis.js");
-    await view.render({
-      root,
-      run,
-      renderMetrics,
-      renderDataset: renderDatasetForRun
-    });
-    return;
-  }
-
-  if (run.report_kind === "comparison") {
-    const view = await import("../businesses/comparison.js");
+  const loadView = REPORT_VIEWS[run.report_kind];
+  if (loadView) {
+    const view = await loadView();
     await view.render({
       root,
       run,
@@ -227,7 +221,7 @@ async function renderBusinessReport(root, run, businessId, groupId, baseUrl) {
   }
 }
 
-function renderSecondaryAnalysis(root, baseUrl, businessId, groupId) {
+function renderDemoReanalysis(root, baseUrl, businessId, groupId) {
   const panel = createPanel("Secondary analysis");
   panel.body.append(
     createTextElement(
@@ -258,7 +252,7 @@ function renderSecondaryAnalysis(root, baseUrl, businessId, groupId) {
 
   const action = document.createElement("div");
   action.className = "col-auto";
-  const button = createTextElement("button", "btn btn-primary", "Run analysis");
+  const button = createTextElement("button", "btn btn-primary", "Run reanalysis");
   button.type = "submit";
   action.append(button);
 
@@ -274,7 +268,7 @@ function renderSecondaryAnalysis(root, baseUrl, businessId, groupId) {
 
     try {
       const threshold = Number(new FormData(form).get("threshold") || 0);
-      const result = await requestJson(baseUrl + "/analysis", {
+      const result = await requestJson(baseUrl + "/reanalysis", {
         method: "POST",
         headers: {"Content-Type": "application/json"},
         body: JSON.stringify({threshold})
@@ -356,10 +350,10 @@ export async function renderReport(root) {
   renderHistory(root, group, businessId, groupId, historyPage);
 
   if (
-    businessId === "analysis" &&
+    businessId === "demo" &&
     run.run_id === group.latest_run_id &&
     run.status === "success"
   ) {
-    renderSecondaryAnalysis(root, baseUrl, businessId, groupId);
+    renderDemoReanalysis(root, baseUrl, businessId, groupId);
   }
 }

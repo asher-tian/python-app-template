@@ -2,14 +2,16 @@ export async function render({root, run, renderMetrics, renderDataset}) {
   const summary = run.summary || {};
   const note = document.createElement("p");
   note.className = "small text-secondary mb-3";
-  note.textContent = "Comparison · left and right result analysis";
+  note.textContent = "Demo · parallel Groups using one shared process pool";
   root.append(note);
 
   renderMetrics(root, [
     ["Items", summary.item_count],
-    ["Left total", summary.left_total],
-    ["Right total", summary.right_total],
-    ["Difference", Number(summary.right_total || 0) - Number(summary.left_total || 0)]
+    ["Threshold", summary.threshold],
+    ["Total", summary.total],
+    ["Selected items", summary.selected_count],
+    ["Selected total", summary.selected_total],
+    ["Compute tasks", summary.compute_chunks]
   ]);
 
   for (const reference of run.datasets || []) {

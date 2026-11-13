@@ -7,9 +7,9 @@ def test_jsonl_contains_run_and_group_context_and_keeps_traceback_out_of_console
     tmp_path,
     capsys,
 ):
-    manager = RunLogging(tmp_path, command="analysis", run_id="run-1")
+    manager = RunLogging(tmp_path, command="demo", run_id="run-1")
     manager.run_logger.info("Run started")
-    group_logger = manager.group_logger("alpha", "analysis")
+    group_logger = manager.group_logger("alpha", "demo")
     group_logger.info("Group started")
     try:
         raise ValueError("invalid sample")
@@ -28,21 +28,21 @@ def test_jsonl_contains_run_and_group_context_and_keeps_traceback_out_of_console
     group_records = [
         json.loads(line)
         for line in (
-            tmp_path / "logs" / "groups" / "analysis_alpha.jsonl"
+            tmp_path / "logs" / "groups" / "demo_alpha.jsonl"
         ).read_text(encoding="utf-8").splitlines()
     ]
     run_text = (tmp_path / "logs" / "run.log").read_text(encoding="utf-8")
     group_text = (
-        tmp_path / "logs" / "groups" / "analysis_alpha.log"
+        tmp_path / "logs" / "groups" / "demo_alpha.log"
     ).read_text(encoding="utf-8")
 
     assert run_records[0]["message"] == "Run started"
     assert run_records[0]["run_id"] == "run-1"
-    assert run_records[0]["command"] == "analysis"
+    assert run_records[0]["command"] == "demo"
     assert run_records[0]["source"].endswith("test_logging.py")
     assert group_records[0]["run_id"] == "run-1"
-    assert group_records[0]["command"] == "analysis"
-    assert group_records[0]["business_id"] == "analysis"
+    assert group_records[0]["command"] == "demo"
+    assert group_records[0]["business_id"] == "demo"
     assert group_records[0]["group_id"] == "alpha"
     assert group_records[-1]["exception"]["type"] == "ValueError"
     assert "Traceback" in group_records[-1]["exception"]["stacktrace"]

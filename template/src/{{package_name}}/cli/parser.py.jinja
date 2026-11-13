@@ -4,27 +4,25 @@ import argparse
 from pathlib import Path
 
 
-def _add_business_arguments(command: argparse.ArgumentParser) -> None:
-    command.add_argument("--config", type=Path, required=True, help="Business TOML config")
-    command.add_argument(
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="{{ project_slug }}")
+    parser.add_argument("--version", action="version", version="%(prog)s 0.3.0")
+    commands = parser.add_subparsers(dest="command", required=True)
+
+    demo = commands.add_parser("demo", help="Run the end-to-end template demonstration")
+    demo.add_argument(
+        "--config",
+        type=Path,
+        default=Path("examples/demo.cfg"),
+        help="Demo business TOML config",
+    )
+    demo.add_argument(
         "--app-config",
         type=Path,
         default=Path("examples/app.cfg"),
         help="Global application TOML config",
     )
-    command.add_argument("--workpath", type=Path, help="Override configured workpath")
-
-
-def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="{{ project_slug }}")
-    parser.add_argument("--version", action="version", version="%(prog)s 0.2.0")
-    commands = parser.add_subparsers(dest="command", required=True)
-
-    analysis = commands.add_parser("analysis", help="Run the sample Analysis business")
-    _add_business_arguments(analysis)
-
-    comparison = commands.add_parser("comparison", help="Run the sample Comparison business")
-    _add_business_arguments(comparison)
+    demo.add_argument("--workpath", type=Path, help="Override configured workpath")
 
     http = commands.add_parser("http", help="Serve reports from the configured workpath")
     http.add_argument(

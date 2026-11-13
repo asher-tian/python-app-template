@@ -1,25 +1,47 @@
-from {{ package_name }}.core.workflows.analysis import (
-    AnalysisInput,
+from {{ package_name }}.core.workflows.demo import (
+    DemoInput,
+    aggregate_demo,
+    build_demo_chunks,
+    calculate_demo_chunk,
     reanalyze_records,
-    run_analysis,
 )
-from {{ package_name }}.core.workflows.comparison import ComparisonInput, run_comparison
 
 
-def test_analysis_workflow_and_secondary_analysis():
-    result = run_analysis(AnalysisInput("alpha", "Alpha", 4, 2))
+def test_demo_workflow_splits_calculation_and_aggregates_results():
+    request = DemoInput("alpha", "Alpha", 4, 3)
+    chunks = build_demo_chunks(request, chunk_size=2)
+    partials = [calculate_demo_chunk(chunk) for chunk in chunks]
+    result = aggregate_demo(request, partials)
+
     assert result.total == 30
-    assert len(result.records) == 4
+    assert result.selected_count == 2
+    assert result.selected_total == 25
+    assert result.compute_chunks == 2
+    assert [item["value"] for item in result.records] == [1, 2, 3, 4]
 
-    secondary = reanalyze_records(result.records, 3)
+
+def test_demo_rejects_invalid_chunk_size():
+    request = DemoInput("alpha", "Alpha", 4, 0)
+    try:
+        build_demo_chunks(request, chunk_size=0)
+    except ValueError as exc:
+        assert "chunk_size" in str(exc)
+    else:
+        raise AssertionError("Expected invalid chunk size to fail")
+
+
+def test_secondary_analysis_uses_saved_demo_records():
+    secondary = reanalyze_records(
+        [
+            {"value": 1, "square": 1},
+            {"value": 2, "square": 4},
+            {"value": 3, "square": 9},
+            {"value": 4, "square": 16},
+        ],
+        3,
+    )
     assert secondary == {
         "threshold": 3,
         "selected_count": 2,
         "selected_total": 25,
     }
-
-
-def test_comparison_business_has_its_own_result_shape():
-    result = run_comparison(ComparisonInput("alpha", "Alpha", 3))
-    assert result.left_total == 6
-    assert result.right_total == 12

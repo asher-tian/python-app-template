@@ -3,7 +3,7 @@ import json
 from {{ package_name }}.cli.main import main
 
 
-def test_cli_creates_only_run_records_and_business_owned_artifacts(tmp_path):
+def test_demo_runs_parallel_groups_and_persists_logs_results_and_reports(tmp_path):
     app_config = tmp_path / "app.cfg"
     app_config.write_text(
         '[app]\nworkpath = "./workspace"\n'
@@ -11,21 +11,23 @@ def test_cli_creates_only_run_records_and_business_owned_artifacts(tmp_path):
         '[http]\nauto_open = false\n',
         encoding="utf-8",
     )
-    analysis_config = tmp_path / "analysis.cfg"
-    analysis_config.write_text(
-        '[business]\nid = "analysis"\nname = "Analysis"\n'
-        '[paths]\ndatasets = "custom-analysis/data"\n'
-        'reports = "custom-analysis/views"\n'
-        'derived = "custom-analysis/derived"\n'
-        '[[groups]]\nlabel = "alpha"\nitem_count = 4\n'
-        '[[groups]]\nlabel = "beta"\nitem_count = 3\n',
+    demo_config = tmp_path / "demo.cfg"
+    demo_config.write_text(
+        '[business]\nid = "demo"\nname = "Demo"\n'
+        'description = "End-to-end template demonstration"\n'
+        '[paths]\ndatasets = "custom-demo/data"\n'
+        'reports = "custom-demo/views"\n'
+        'derived = "custom-demo/derived"\n'
+        '[[groups]]\nlabel = "alpha"\nitem_count = 500\nthreshold = 200\n'
+        '[[groups]]\nlabel = "beta"\nitem_count = 300\nthreshold = 100\n'
+        '[[groups]]\nlabel = "gamma"\nitem_count = 750\nthreshold = 400\n',
         encoding="utf-8",
     )
 
     assert main([
-        "analysis",
+        "demo",
         "--config",
-        str(analysis_config),
+        str(demo_config),
         "--app-config",
         str(app_config),
     ]) == 0
@@ -34,13 +36,30 @@ def test_cli_creates_only_run_records_and_business_owned_artifacts(tmp_path):
     run_files = list((workspace / "common" / "executions").glob("*/run.json"))
     assert len(run_files) == 1
     run = json.loads(run_files[0].read_text(encoding="utf-8"))
+
+    assert run["command"] == "demo"
+    assert run["business_id"] == "demo"
     assert run["status"] == "success"
-    assert {item["group_id"] for item in run["groups"]} == {"alpha", "beta"}
-    assert run["configuration"]["effective_config"]["business"]["paths"]["reports"] == (
-        "custom-analysis/views"
-    )
+    assert {item["group_id"] for item in run["groups"]} == {"alpha", "beta", "gamma"}
+    assert all(item["status"] == "success" for item in run["groups"])
+    assert all(item["summary"]["compute_chunks"] > 0 for item in run["groups"])
     assert run["environment"]["python_version"]
-    assert (workspace / "custom-analysis" / "views").is_dir()
+
+    run_dir = run_files[0].parent
+    assert (run_dir / "logs" / "run.log").is_file()
+    assert (run_dir / "logs" / "run.jsonl").is_file()
+    assert "Run finished" in (run_dir / "logs" / "run.log").read_text(encoding="utf-8")
+    assert "shared process pool" in (
+        run_dir / "logs" / "groups" / "demo_alpha.log"
+    ).read_text(encoding="utf-8")
+
+    for group in ("alpha", "beta", "gamma"):
+        group_result = next(item for item in run["groups"] if item["group_id"] == group)
+        assert (workspace / "custom-demo" / "views" / group).is_dir()
+        assert (workspace / group_result["report_entry"]).is_file()
+        records = next(item for item in group_result["datasets"] if item["id"] == "records")
+        assert (workspace / records["path"]).is_file()
+
     assert not (workspace / "workspace.json").exists()
     assert not (workspace / "businesses").exists()
     assert not (workspace / "shared").exists()

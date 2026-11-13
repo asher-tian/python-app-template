@@ -20,9 +20,9 @@ def test_app_config_resolves_workpath_and_custom_run_records_path(tmp_path):
 
 
 def test_business_config_loads_business_owned_paths_and_derives_group_ids(tmp_path):
-    config_path = tmp_path / "analysis.cfg"
+    config_path = tmp_path / "demo.cfg"
     config_path.write_text(
-        '[business]\nid = "analysis"\nname = "Analysis"\n'
+        '[business]\nid = "demo"\nname = "Demo"\n'
         '[paths]\nreports = "my-analysis/output/reports"\n'
         'datasets = "my-analysis/data"\n'
         '[[groups]]\nlabel = "Alpha Group"\n'
@@ -35,9 +35,9 @@ def test_business_config_loads_business_owned_paths_and_derives_group_ids(tmp_pa
 
 
 def test_business_config_rejects_duplicate_group_ids_and_unsafe_paths(tmp_path):
-    config_path = tmp_path / "analysis.cfg"
+    config_path = tmp_path / "demo.cfg"
     config_path.write_text(
-        '[business]\nid = "analysis"\nname = "Analysis"\n'
+        '[business]\nid = "demo"\nname = "Demo"\n'
         '[paths]\nreports = "../outside"\n'
         '[[groups]]\nlabel = "Alpha"\n',
         encoding="utf-8",
@@ -46,7 +46,7 @@ def test_business_config_rejects_duplicate_group_ids_and_unsafe_paths(tmp_path):
         load_business_config(config_path)
 
     config_path.write_text(
-        '[business]\nid = "analysis"\nname = "Analysis"\n'
+        '[business]\nid = "demo"\nname = "Demo"\n'
         '[[groups]]\nlabel = "Alpha Group"\n'
         '[[groups]]\nlabel = "alpha-group"\n',
         encoding="utf-8",

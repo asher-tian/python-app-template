@@ -1,12 +1,11 @@
-"""Business-owned report builders and artifact layouts."""
+"""Demo report builders and business-owned artifact layouts."""
 
 from __future__ import annotations
 
 from html import escape
 from pathlib import PurePosixPath
 
-from {{ package_name }}.core.workflows.analysis import AnalysisResult
-from {{ package_name }}.core.workflows.comparison import ComparisonResult
+from {{ package_name }}.core.workflows.demo import DemoResult
 from {{ package_name }}.report.models import DatasetReference, GroupRunResult
 from {{ package_name }}.store.files import write_json, write_jsonl, write_text
 from {{ package_name }}.store.workspace import Workspace
@@ -57,7 +56,7 @@ def _report_page(
 """
 
 
-def build_analysis_report(
+def build_demo_report(
     *,
     workspace: Workspace,
     business_paths: dict[str, str],
@@ -65,7 +64,7 @@ def build_analysis_report(
     group_id: str,
     label: str,
     run_id: str,
-    result: AnalysisResult,
+    result: DemoResult,
 ) -> GroupRunResult:
     records_path = _configured_path(
         business_paths, "datasets", group_id, run_id, "records.jsonl"
@@ -81,6 +80,9 @@ def build_analysis_report(
         "item_count": result.item_count,
         "threshold": result.threshold,
         "total": result.total,
+        "selected_count": result.selected_count,
+        "selected_total": result.selected_total,
+        "compute_chunks": result.compute_chunks,
     }
     write_jsonl(workspace.root, records_path, result.records)
     write_json(workspace.root, summary_path, summary)
@@ -88,11 +90,11 @@ def build_analysis_report(
         workspace.root,
         report_path,
         _report_page(
-            title=f"Analysis - {label}",
+            title=f"Demo - {label}",
             business_id=business_id,
             group_id=group_id,
             run_id=run_id,
-            report_kind="analysis",
+            report_kind="demo",
         ),
     )
     return GroupRunResult(
@@ -100,11 +102,11 @@ def build_analysis_report(
         label=label,
         status="success",
         report_entry=report_path,
-        report_kind="analysis",
+        report_kind="demo",
         datasets=[
             DatasetReference(
                 id="records",
-                title="Analysis records",
+                title="Computed records",
                 path=records_path,
                 format="jsonl",
                 row_count=len(result.records),
@@ -115,7 +117,7 @@ def build_analysis_report(
     )
 
 
-def build_analysis_reanalysis_report(
+def build_demo_reanalysis_report(
     *,
     workspace: Workspace,
     business_paths: dict[str, str],
@@ -141,11 +143,11 @@ def build_analysis_reanalysis_report(
         workspace.root,
         report_path,
         _report_page(
-            title=f"Analysis - {label}",
+            title=f"Demo reanalysis - {label}",
             business_id=business_id,
             group_id=group_id,
             run_id=run_id,
-            report_kind="analysis",
+            report_kind="demo",
         ),
     )
     return GroupRunResult(
@@ -153,11 +155,11 @@ def build_analysis_reanalysis_report(
         label=label,
         status="success",
         report_entry=report_path,
-        report_kind="analysis",
+        report_kind="demo",
         datasets=[
             DatasetReference(
                 id="records",
-                title="Analysis records",
+                title="Source records",
                 path=records_path,
                 format="jsonl",
                 row_count=len(records),
@@ -169,62 +171,4 @@ def build_analysis_reanalysis_report(
             ),
         ],
         summary=result,
-    )
-
-
-def build_comparison_report(
-    *,
-    workspace: Workspace,
-    business_paths: dict[str, str],
-    business_id: str,
-    group_id: str,
-    label: str,
-    run_id: str,
-    result: ComparisonResult,
-) -> GroupRunResult:
-    records_path = _configured_path(
-        business_paths, "exports", group_id, run_id, "comparison.jsonl"
-    )
-    summary_path = _configured_path(
-        business_paths, "exports", group_id, run_id, "summary.json"
-    )
-    report_path = _configured_path(
-        business_paths, "reports", group_id, run_id, "index.html"
-    )
-
-    summary = {
-        "item_count": result.item_count,
-        "left_total": result.left_total,
-        "right_total": result.right_total,
-    }
-    write_jsonl(workspace.root, records_path, result.records)
-    write_json(workspace.root, summary_path, summary)
-    write_text(
-        workspace.root,
-        report_path,
-        _report_page(
-            title=f"Comparison - {label}",
-            business_id=business_id,
-            group_id=group_id,
-            run_id=run_id,
-            report_kind="comparison",
-        ),
-    )
-    return GroupRunResult(
-        group_id=group_id,
-        label=label,
-        status="success",
-        report_entry=report_path,
-        report_kind="comparison",
-        datasets=[
-            DatasetReference(
-                id="records",
-                title="Comparison records",
-                path=records_path,
-                format="jsonl",
-                row_count=len(result.records),
-            ),
-            DatasetReference(id="summary", title="Comparison summary", path=summary_path),
-        ],
-        summary=summary,
     )

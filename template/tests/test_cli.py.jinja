@@ -1,38 +1,44 @@
+import pytest
+
+from {{ package_name }}.cli.commands import COMMAND_HANDLERS
 from {{ package_name }}.cli.parser import build_parser
 
 
-def test_business_commands_accept_business_and_app_config():
+def test_only_demo_and_http_commands_are_registered():
+    assert set(COMMAND_HANDLERS) == {"demo", "http"}
+
+
+def test_demo_command_uses_example_configs_by_default():
+    args = build_parser().parse_args(["demo"])
+    assert args.command == "demo"
+    assert str(args.config) == "examples/demo.cfg"
+    assert str(args.app_config) == "examples/app.cfg"
+
+
+def test_demo_accepts_config_and_workpath_overrides():
     args = build_parser().parse_args([
-        "analysis",
+        "demo",
         "--config",
-        "analysis.cfg",
+        "custom/demo.cfg",
         "--app-config",
-        "app.cfg",
+        "custom/app.cfg",
         "--workpath",
         "./tmp-workspace",
     ])
-    assert args.command == "analysis"
-    assert str(args.config) == "analysis.cfg"
-    assert str(args.app_config) == "app.cfg"
+    assert str(args.config) == "custom/demo.cfg"
+    assert str(args.app_config) == "custom/app.cfg"
     assert str(args.workpath) == "tmp-workspace"
 
 
-def test_http_accepts_cfg_alias():
-    args = build_parser().parse_args(["http", "-cfg", "custom.cfg", "--no-open"])
+def test_http_accepts_cfg_alias_and_no_open():
+    args = build_parser().parse_args(["http", "-cfg", "custom/app.cfg", "--no-open"])
     assert args.command == "http"
-    assert str(args.config) == "custom.cfg"
+    assert str(args.config) == "custom/app.cfg"
     assert args.no_open is True
 
 
-def test_comparison_command_is_available():
-    args = build_parser().parse_args(["comparison", "--config", "comparison.cfg"])
-    assert args.command == "comparison"
-
-
-def test_default_config_paths_use_examples_directory():
-    parser = build_parser()
-    business_args = parser.parse_args(["analysis", "--config", "examples/analysis.cfg"])
-    http_args = parser.parse_args(["http"])
-
-    assert str(business_args.app_config) == "examples/app.cfg"
-    assert str(http_args.config) == "examples/app.cfg"
+def test_removed_business_commands_are_not_available():
+    with pytest.raises(SystemExit):
+        build_parser().parse_args(["analysis"])
+    with pytest.raises(SystemExit):
+        build_parser().parse_args(["comparison"])

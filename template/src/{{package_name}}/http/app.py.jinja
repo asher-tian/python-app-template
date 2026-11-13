@@ -12,8 +12,8 @@ from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 
-from {{ package_name }}.core.workflows.analysis import reanalyze_records
-from {{ package_name }}.report.builders import build_analysis_reanalysis_report
+from {{ package_name }}.core.workflows.demo import reanalyze_records
+from {{ package_name }}.report.builders import build_demo_reanalysis_report
 from {{ package_name }}.report.catalog import ReportCatalog
 from {{ package_name }}.report.models import GroupRunResult
 from {{ package_name }}.store.logging import RunLogging
@@ -162,16 +162,16 @@ def create_app(
         except (ValueError, json.JSONDecodeError) as exc:
             raise not_found(exc) from exc
 
-    @app.post("/api/businesses/{business_id}/groups/{group_id}/analysis")
+    @app.post("/api/businesses/{business_id}/groups/{group_id}/reanalysis")
     def secondary_analysis(
         business_id: str,
         group_id: str,
         request: ReanalysisRequest,
     ) -> dict:
-        if business_id != "analysis":
+        if business_id != "demo":
             raise HTTPException(
                 status_code=409,
-                detail=f"Business {business_id!r} does not expose this analysis operation",
+                detail=f"Business {business_id!r} does not expose demo reanalysis",
             )
 
         try:
@@ -193,7 +193,7 @@ def create_app(
         run_record = RunRecordStore(
             workspace,
             run_id=run_id,
-            command="http.analysis",
+            command="http.reanalysis",
             business_id=business_id,
             business_name=source_run.business_name,
             business_description=source_run.business_description,
@@ -206,7 +206,7 @@ def create_app(
         )
         logging_manager = RunLogging(
             run_record.run_dir,
-            command="http.analysis",
+            command="http.reanalysis",
             run_id=run_id,
         )
         run_logger = logging_manager.run_logger
@@ -259,7 +259,7 @@ def create_app(
                 group_id=group_id,
                 label=source_group.label,
                 status="failed",
-                report_kind="analysis",
+                report_kind="demo",
                 error=f"{type(exc).__name__}: {exc}",
             )
             run_record.finish(

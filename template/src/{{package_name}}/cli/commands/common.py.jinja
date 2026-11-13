@@ -1,4 +1,4 @@
-"""Shared CLI orchestration for independent Business Groups."""
+"""Shared CLI orchestration for parallel Group execution."""
 
 from __future__ import annotations
 
@@ -22,25 +22,18 @@ from {{ package_name }}.store.run_record import RunRecordStore
 from {{ package_name }}.store.workspace import Workspace
 
 
-def execute_business(
+def execute_groups(
     *,
     command: str,
-    expected_business_id: str,
     config_path: Path,
     app_config_path: Path,
     workpath_override: Path | None,
-    workflow: Callable[[GroupConfig, str], Any],
+    workflow: Callable[[GroupConfig, str, logging.Logger], Any],
     report_builder: Callable[..., GroupRunResult],
 ) -> int:
     app_config = load_app_config(app_config_path)
     business_config: BusinessConfig = load_business_config(config_path)
     business = business_config.business
-    if business.id != expected_business_id:
-        raise ValueError(
-            f"Command {command!r} expects Business ID {expected_business_id!r}, "
-            f"got {business.id!r}"
-        )
-
     workpath = (
         workpath_override.expanduser().resolve()
         if workpath_override
@@ -166,7 +159,7 @@ def _execute_group(
     group: GroupConfig,
     group_id: str,
     run_id: str,
-    workflow: Callable[[GroupConfig, str], Any],
+    workflow: Callable[[GroupConfig, str, logging.Logger], Any],
     report_builder: Callable[..., GroupRunResult],
     logger: logging.Logger,
 ) -> GroupRunResult:
@@ -175,7 +168,7 @@ def _execute_group(
         group.label,
         extra={"business_id": business_id, "group_id": group_id},
     )
-    result = workflow(group, group_id)
+    result = workflow(group, group_id, logger)
     record = report_builder(
         workspace=workspace,
         business_paths=business_paths,

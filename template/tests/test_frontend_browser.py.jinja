@@ -45,14 +45,12 @@ def test_report_web_browser_smoke():
             try:
                 page.goto(base_url, wait_until="networkidle")
                 assert page.get_by_role("heading", name="Reports").is_visible()
-                assert page.locator(".group-title").count() >= 2
+                assert page.locator(".group-title").count() >= 3
 
-                # Import the lazy chart helper as well; this parses every frontend module.
                 page.evaluate("() => import('/assets/js/shared/chart.js')")
-
                 page.locator(".group-title").nth(0).click()
                 page.get_by_text(
-                    "Analysis · threshold-based record analysis",
+                    "Demo · parallel Groups using one shared process pool",
                     exact=True,
                 ).wait_for()
                 assert page.locator("table tbody tr").count() > 0
@@ -60,25 +58,14 @@ def test_report_web_browser_smoke():
                 with page.expect_response(
                     lambda response: (
                         response.request.method == "POST"
-                        and response.url.endswith("/analysis")
+                        and response.url.endswith("/reanalysis")
                         and response.status == 200
                     )
                 ):
-                    page.get_by_role("button", name="Run analysis").click()
+                    page.get_by_role("button", name="Run reanalysis").click()
 
                 page.wait_for_load_state("networkidle")
                 assert page.locator(".run-history-item").count() >= 2
-
-                page.goto(
-                    base_url + "/businesses/comparison/groups/alpha",
-                    wait_until="networkidle",
-                )
-                page.get_by_text(
-                    "Comparison · left and right result analysis",
-                    exact=True,
-                ).wait_for()
-                assert page.get_by_text("Left total", exact=True).is_visible()
-                assert page.get_by_text("Right total", exact=True).is_visible()
             finally:
                 browser.close()
     finally:

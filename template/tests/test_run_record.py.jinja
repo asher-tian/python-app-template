@@ -10,11 +10,11 @@ def test_run_record_stores_config_environment_and_group_outcomes(tmp_path):
     run = RunRecordStore(
         workspace,
         run_id="run-1",
-        command="analysis",
-        business_id="analysis",
-        business_name="Analysis",
+        command="demo",
+        business_id="demo",
+        business_name="Demo",
         business_description="Sample business",
-        config_source="analysis.cfg",
+        config_source="demo.cfg",
         effective_config={
             "groups": [{"label": "alpha", "api_token": "private"}],
             "password": "hidden",
@@ -29,7 +29,7 @@ def test_run_record_stores_config_environment_and_group_outcomes(tmp_path):
         (workspace.root / "records" / "run-1" / "run.json").read_text(encoding="utf-8")
     )
     assert data["status"] == "success"
-    assert data["business_id"] == "analysis"
+    assert data["business_id"] == "demo"
     assert data["groups"][0]["group_id"] == "alpha"
     assert data["configuration"]["effective_config"]["password"] == "[REDACTED]"
     assert (
@@ -49,10 +49,10 @@ def test_run_record_persists_partial_group_results_while_running(tmp_path):
     run = RunRecordStore(
         workspace,
         run_id="run-2",
-        command="analysis",
-        business_id="analysis",
-        business_name="Analysis",
-        config_source="analysis.cfg",
+        command="demo",
+        business_id="demo",
+        business_name="Demo",
+        config_source="demo.cfg",
         effective_config={"groups": []},
     )
     run.update_groups([{"group_id": "alpha", "status": "success"}])

@@ -1,13 +1,11 @@
-"""CLI entry point."""
+"""CLI entry point with explicit command dispatch."""
 
 from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
 
-from {{ package_name }}.cli.commands.analysis import execute as execute_analysis
-from {{ package_name }}.cli.commands.comparison import execute as execute_comparison
-from {{ package_name }}.cli.commands.http import execute as execute_http
+from {{ package_name }}.cli.commands import COMMAND_HANDLERS
 from {{ package_name }}.cli.parser import build_parser
 
 
@@ -17,23 +15,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 
     try:
-        if args.command == "analysis":
-            return execute_analysis(args.config, args.app_config, args.workpath)
-        if args.command == "comparison":
-            return execute_comparison(args.config, args.app_config, args.workpath)
-        if args.command == "http":
-            return execute_http(
-                args.config,
-                workpath=args.workpath,
-                host=args.host,
-                port=args.port,
-                open_browser=not args.no_open,
-            )
+        return COMMAND_HANDLERS[args.command](args)
     except Exception as exc:
         logging.getLogger("{{ package_name }}").error(
             "Command failed: %s: %s", type(exc).__name__, exc
         )
         return 2
-
-    parser.error(f"Unsupported command: {args.command}")
-    return 2

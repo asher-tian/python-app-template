@@ -56,25 +56,25 @@ def test_report_catalog_discovers_businesses_and_groups_from_run_records_only(tm
     _write_run(
         workspace,
         run_id="run-1",
-        business_id="analysis",
-        business_name="Analysis",
+        business_id="first-business",
+        business_name="First Business",
         group_id="alpha",
         label="Alpha",
     )
     _write_run(
         workspace,
         run_id="run-2",
-        business_id="comparison",
-        business_name="Comparison",
+        business_id="second-business",
+        business_name="Second Business",
         group_id="alpha",
         label="Alpha",
     )
 
     catalog = ReportCatalog(workspace)
     businesses = catalog.list_businesses()
-    assert [item["business_id"] for item in businesses] == ["analysis", "comparison"]
-    assert catalog.list_groups("analysis")[0]["group_id"] == "alpha"
-    assert catalog.list_groups("comparison")[0]["group_id"] == "alpha"
+    assert [item["business_id"] for item in businesses] == ["first-business", "second-business"]
+    assert catalog.list_groups("first-business")[0]["group_id"] == "alpha"
+    assert catalog.list_groups("second-business")[0]["group_id"] == "alpha"
     assert not (workspace.root / "businesses").exists()
     assert not (workspace.root / "business.json").exists()
 
@@ -85,27 +85,27 @@ def test_failed_run_does_not_replace_latest_successful_group_run(tmp_path):
     _write_run(
         workspace,
         run_id="run-1",
-        business_id="analysis",
-        business_name="Analysis",
+        business_id="first-business",
+        business_name="First Business",
         group_id="alpha",
         label="Alpha",
     )
     _write_run(
         workspace,
         run_id="run-2",
-        business_id="analysis",
-        business_name="Analysis",
+        business_id="first-business",
+        business_name="First Business",
         group_id="alpha",
         label="Alpha",
         status="failed",
     )
 
     catalog = ReportCatalog(workspace)
-    detail = catalog.group_context("analysis", "alpha")
+    detail = catalog.group_context("first-business", "alpha")
     assert detail["latest_run"]["run_id"] == "run-1"
     assert detail["group"]["latest_status"] == "failed"
     assert len(detail["group"]["runs"]) == 2
-    assert catalog.dataset("analysis", "alpha", "summary") == {"value": 7}
+    assert catalog.dataset("first-business", "alpha", "summary") == {"value": 7}
 
 
 
@@ -116,21 +116,21 @@ def test_run_history_is_paginated(tmp_path):
         _write_run(
             workspace,
             run_id=f"run-{index}",
-            business_id="analysis",
-            business_name="Analysis",
+            business_id="first-business",
+            business_name="First Business",
             group_id="alpha",
             label="Alpha",
         )
 
     catalog = ReportCatalog(workspace)
     first_page = catalog.group_context(
-        "analysis",
+        "first-business",
         "alpha",
         history_page=1,
         history_page_size=1,
     )
     second_page = catalog.group_context(
-        "analysis",
+        "first-business",
         "alpha",
         history_page=2,
         history_page_size=1,
@@ -146,8 +146,8 @@ def test_jsonl_dataset_pages_are_bounded_and_run_detail_is_redacted(tmp_path):
     workspace = Workspace(tmp_path / "work")
     workspace.initialize()
     records = [{"value": value} for value in range(125)]
-    dataset_path = "analysis/data/alpha/run-page/records.jsonl"
-    report_path = "analysis/reports/alpha/run-page/index.html"
+    dataset_path = "first-business/data/alpha/run-page/records.jsonl"
+    report_path = "first-business/reports/alpha/run-page/index.html"
     write_jsonl(workspace.root, dataset_path, records)
     report_file = workspace.resolve(report_path)
     report_file.parent.mkdir(parents=True, exist_ok=True)
@@ -156,12 +156,12 @@ def test_jsonl_dataset_pages_are_bounded_and_run_detail_is_redacted(tmp_path):
     run = RunRecordStore(
         workspace,
         run_id="run-page",
-        command="analysis",
-        business_id="analysis",
-        business_name="Analysis",
-        config_source="analysis.cfg",
+        command="first-business",
+        business_id="first-business",
+        business_name="First Business",
+        config_source="first-business.cfg",
         effective_config={
-            "business": {"paths": {"reports": "analysis/reports"}},
+            "business": {"paths": {"reports": "first-business/reports"}},
             "api_token": "must-not-be-returned",
         },
     )
@@ -170,7 +170,7 @@ def test_jsonl_dataset_pages_are_bounded_and_run_detail_is_redacted(tmp_path):
         label="Alpha",
         status="success",
         report_entry=report_path,
-        report_kind="analysis",
+        report_kind="sample",
         datasets=[
             DatasetReference(
                 id="records",
@@ -186,7 +186,7 @@ def test_jsonl_dataset_pages_are_bounded_and_run_detail_is_redacted(tmp_path):
 
     catalog = ReportCatalog(workspace)
     page = catalog.dataset_page(
-        "analysis",
+        "first-business",
         "alpha",
         "records",
         "run-page",
@@ -197,6 +197,6 @@ def test_jsonl_dataset_pages_are_bounded_and_run_detail_is_redacted(tmp_path):
     assert page["total_pages"] == 3
     assert [item["value"] for item in page["records"]] == list(range(50, 100))
 
-    detail = catalog.run_detail("analysis", "alpha", "run-page")
-    assert detail["report_kind"] == "analysis"
+    detail = catalog.run_detail("first-business", "alpha", "run-page")
+    assert detail["report_kind"] == "sample"
     assert detail["configuration"]["effective_config"]["api_token"] == "[REDACTED]"
