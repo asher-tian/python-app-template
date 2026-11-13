@@ -1,7 +1,8 @@
-"""Start the optional local report HTTP server."""
+"""Start the local report HTTP server."""
 
 from __future__ import annotations
 
+import argparse
 import ipaddress
 import logging
 import threading
@@ -27,24 +28,21 @@ def _require_loopback(host: str) -> str:
     return address.compressed
 
 
-def execute(
-    config_path: Path,
-    *,
-    workpath: Path | None = None,
-    host: str | None = None,
-    port: int | None = None,
-    open_browser: bool = True,
-) -> int:
-    config = load_app_config(config_path)
-    selected_host = host or config.http.host
-    selected_port = config.http.port if port is None else port
-    selected_workpath = workpath.expanduser().resolve() if workpath else config.app.workpath
+def execute(args: argparse.Namespace) -> int:
+    config = load_app_config(args.config)
+    selected_host = args.host or config.http.host
+    selected_port = config.http.port if args.port is None else args.port
+    selected_workpath = (
+        args.workpath.expanduser().resolve()
+        if args.workpath
+        else config.app.workpath
+    )
     url_host = _require_loopback(selected_host)
     if not 1 <= selected_port <= 65535:
         raise ValueError("HTTP port must be between 1 and 65535")
 
     url = f"http://{url_host}:{selected_port}/"
-    should_open = open_browser and config.http.auto_open
+    should_open = not args.no_open and config.http.auto_open
     if should_open:
         threading.Timer(1.0, webbrowser.open, args=(url,)).start()
 
