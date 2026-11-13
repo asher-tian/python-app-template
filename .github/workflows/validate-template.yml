@@ -51,6 +51,7 @@ jobs:
           assert Path("examples/app.cfg").is_file()
           assert Path("examples/analysis.cfg").is_file()
           assert Path("examples/comparison.cfg").is_file()
+          assert 'workpath = "../workspace"' in Path("examples/app.cfg").read_text(encoding="utf-8")
           assert not Path("app.cfg").exists()
           assert not Path("analysis.cfg").exists()
           assert not Path("comparison.cfg").exists()
