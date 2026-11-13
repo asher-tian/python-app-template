@@ -224,7 +224,7 @@ def create_app(
         )
         try:
             result = reanalyze_records(records, request.threshold)
-            group_result = build_analysis_reanalysis_report(
+            group_result = build_demo_reanalysis_report(
                 workspace=workspace,
                 business_paths=business_paths,
                 business_id=business_id,
